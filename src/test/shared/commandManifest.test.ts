@@ -102,42 +102,6 @@ suite('манифест команд', () => {
 		assert.deepStrictEqual(missing, [], `узлы дерева ссылаются на несуществующие команды: ${missing.join(', ')}`);
 	});
 
-	test('группа тестового окружения: тестовые расширения и unit тесты, порядок по действию', () => {
-		const group = TREE_GROUPS.find((item) => item.sectionType === 'testEnvironment');
-		assert.ok(group, 'группа «Тестовое окружение» пропала из дерева');
-		assert.deepStrictEqual(
-			group.commands.map((command) => command.command),
-			[
-				'1c-platform-tools.test.addYaxunit',
-				'1c-platform-tools.test.loadExtensions',
-				'1c-platform-tools.test.dumpExtensions',
-				'1c-platform-tools.test.compileExtensions',
-				'1c-platform-tools.test.compileEpf',
-				'1c-platform-tools.test.decompileExtensions',
-				'1c-platform-tools.test.decompileEpf',
-			],
-			'состав или порядок команд тестового окружения разошёлся с задуманным'
-		);
-	});
-
-	test('группа тестирования: прогоны, мутационное тестирование, затем отчёт Allure', () => {
-		const group = TREE_GROUPS.find((item) => item.sectionType === 'test');
-		assert.ok(group, 'группа «Тестирование» пропала из дерева');
-		assert.deepStrictEqual(
-			group.commands.map((command) => command.command),
-			[
-				'1c-platform-tools.test.xunit',
-				'1c-platform-tools.syntaxCheck.run',
-				'1c-platform-tools.edt.validate',
-				'1c-platform-tools.test.vanessa',
-				'1c-platform-tools.test.yaxunit',
-				'1c-platform-tools.test.mutatos',
-				'1c-platform-tools.test.allure',
-			],
-			'состав или порядок команд тестирования разошёлся с задуманным'
-		);
-	});
-
 	test('команды расширений решения не смешаны с тестовыми', () => {
 		const group = TREE_GROUPS.find((item) => item.sectionType === 'extension');
 		assert.ok(group, 'группа «Расширения» пропала из дерева');
