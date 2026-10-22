@@ -118,15 +118,16 @@ function isInside(parent: string, dir: string): boolean {
  *
  * Одна и та же деталька задаёт и каталоги, которые сканер исходников пропускает,
  * встретив `/<имя>/` в пути файла, и имена верхнего уровня, которые не копируются
- * в рабочие копии. Каталоги результатов сборки из копий убираются, каталог тестов
- * внутри исходников убирается из сканера. Имя, которое встречается в пути самих
- * исходников, сканер отбросил бы вместе со всеми файлами, поэтому оно не
- * передаётся.
+ * в рабочие копии. Каталоги результатов сборки и верхнего уровня без файлов `.os`
+ * из копий убираются, каталог тестов внутри исходников убирается из сканера.
+ * Имя, которое встречается в пути самих исходников, сканер отбросил бы вместе со
+ * всеми файлами, поэтому оно не передаётся.
  *
  * @param options.root - Корень проекта
  * @param options.sourcesDirs - Абсолютные каталоги исходников
  * @param options.testsDirs - Абсолютные каталоги тестов
  * @param options.outputDirs - Абсолютные каталоги результатов сборки
+ * @param options.topLevelWithoutOs - Имена каталогов верхнего уровня без `.os`
  * @param options.hasTopLevel - Есть ли в корне проекта элемент с таким именем
  * @returns Имена каталогов
  */
@@ -135,6 +136,7 @@ export function excludedDirectories(options: {
 	sourcesDirs: readonly string[];
 	testsDirs: readonly string[];
 	outputDirs: readonly string[];
+	topLevelWithoutOs?: readonly string[];
 	hasTopLevel: (name: string) => boolean;
 }): string[] {
 	const { root, sourcesDirs, testsDirs } = options;
@@ -146,6 +148,11 @@ export function excludedDirectories(options: {
 		const top = topSegment(root, dir);
 		if (top !== undefined && !kept.has(top)) {
 			names.push(top);
+		}
+	}
+	for (const name of options.topLevelWithoutOs ?? []) {
+		if (!kept.has(name)) {
+			names.push(name);
 		}
 	}
 	for (const dir of testsDirs) {
