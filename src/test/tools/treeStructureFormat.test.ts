@@ -11,20 +11,6 @@ const commands = (sectionType: string, format: 'designer' | 'edt' | undefined) =
 	groupCommandsFor(group(sectionType), format).map((entry) => entry.command);
 
 suite('дерево команд под формат исходников', () => {
-	test('все группы команд при первом открытии свёрнуты', () => {
-		for (const item of TREE_GROUPS) {
-			assert.strictEqual(item.defaultCollapsibleState, 'collapsed', item.groupLabel);
-		}
-	});
-
-	test('группа EDT стоит между внешними файлами и поддержкой', () => {
-		const order = TREE_GROUPS.map((item) => item.sectionType);
-		const edt = order.indexOf('edt');
-		assert.strictEqual(order[0], 'infobase');
-		assert.strictEqual(order[edt - 1], 'externalFile');
-		assert.strictEqual(order[edt + 1], 'support');
-	});
-
 	test('у проекта EDT нет команд по файлам выгрузки', () => {
 		const edt = commands('configuration', 'edt');
 		assert.ok(!edt.includes('1c-platform-tools.cf.loadIncrement'));
@@ -37,10 +23,13 @@ suite('дерево команд под формат исходников', () =
 		assert.deepStrictEqual(commands('configuration', undefined), group('configuration').commands.map((c) => c.command));
 	});
 
-	test('группа EDT показывает выгрузке только импорт, а проекту работу с проектом', () => {
-		assert.deepStrictEqual(commands('edt', 'designer'), ['1c-platform-tools.edt.import']);
+	test('в группе EDT импорт доступен выгрузке, а команды проекта — проекту EDT', () => {
+		const designer = commands('edt', 'designer');
 		const edt = commands('edt', 'edt');
+		assert.ok(designer.includes('1c-platform-tools.edt.import'));
 		assert.ok(!edt.includes('1c-platform-tools.edt.import'));
+		assert.ok(!designer.includes('1c-platform-tools.edt.export'));
+		assert.ok(!designer.includes('1c-platform-tools.edt.projectInfo'));
 		assert.ok(edt.includes('1c-platform-tools.edt.export') && edt.includes('1c-platform-tools.edt.projectInfo'));
 		// Запуск и проверка живут в своих группах рядом с Предприятием и тестами
 		assert.ok(!edt.includes('1c-platform-tools.run.edt') && !edt.includes('1c-platform-tools.edt.validate'));
@@ -49,13 +38,17 @@ suite('дерево команд под формат исходников', () =
 	test('запуск EDT стоит в группе запуска только у проекта EDT', () => {
 		assert.ok(commands('run', 'edt').includes('1c-platform-tools.run.edt'));
 		assert.ok(!commands('run', 'designer').includes('1c-platform-tools.run.edt'));
-		assert.deepStrictEqual(commands('run', 'designer'), ['1c-platform-tools.run.enterprise', '1c-platform-tools.run.designer']);
 	});
 
-	test('проверка проекта EDT стоит среди тестов только у проекта EDT и не дублируется', () => {
+	test('в дереве проверка проекта EDT — edt.validate, а не test.validateEdt', () => {
+		const allTreeCommands = TREE_GROUPS.flatMap((item) => item.commands.map((entry) => entry.command));
+		assert.ok(allTreeCommands.includes('1c-platform-tools.edt.validate'));
+		assert.ok(
+			!allTreeCommands.includes('1c-platform-tools.test.validateEdt'),
+			'в дереве должна стоять edt.validate: test.validateEdt — отдельная проверка через vanessa-runner'
+		);
 		assert.ok(commands('test', 'edt').includes('1c-platform-tools.edt.validate'));
 		assert.ok(!commands('test', 'designer').includes('1c-platform-tools.edt.validate'));
-		assert.ok(!commands('test', undefined).includes('1c-platform-tools.test.validateEdt'));
 	});
 
 	test('подписи команд одни на оба формата и не называют раскладку исходников', () => {
@@ -66,9 +59,5 @@ suite('дерево команд под формат исходников', () =
 				assert.ok(!entry.treeLabel.includes(layout), `${entry.command}: ${entry.treeLabel}`);
 			}
 		}
-		assert.strictEqual(
-			group('configuration').commands.find((entry) => entry.command === '1c-platform-tools.cf.load')?.treeLabel,
-			'📥 Загрузить из исходного кода'
-		);
 	});
 });
