@@ -34,6 +34,17 @@ export function findSourceDirectories(root: string, options: { skip: readonly st
 }
 
 /**
+ * Имена каталогов верхнего уровня без файлов `.os`.
+ *
+ * @param root - Корень проекта
+ */
+export function topLevelWithoutOs(root: string): string[] {
+	return topLevelDirectories(root)
+		.filter((dir) => !hasSources(dir, []))
+		.map((dir) => path.basename(dir));
+}
+
+/**
  * Каталоги верхнего уровня, кроме скрытых и заведомо чужих.
  *
  * @param root - Корень проекта

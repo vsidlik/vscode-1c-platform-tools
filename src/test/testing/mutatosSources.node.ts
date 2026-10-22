@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { describe, test } from 'node:test';
-import { findSourceDirectories } from '../../features/testing/mutatos/mutatosSources';
+import { findSourceDirectories, topLevelWithoutOs } from '../../features/testing/mutatos/mutatosSources';
 
 const FIXTURES = path.resolve(__dirname, '../../../src/test/fixtures/mutatos');
 
@@ -38,5 +38,16 @@ describe('mutatos: каталоги исходников', () => {
 		const root = path.join(FIXTURES, 'nosources');
 
 		assert.deepEqual(findSourceDirectories(root, { skip: skipOf(root) }), []);
+	});
+
+	test('проект 1С с тестами OneScript: исходники в lib, выгрузка в src без .os', () => {
+		const root = path.join(FIXTURES, 'with-cf');
+		const withoutOs = topLevelWithoutOs(root);
+
+		assert.deepEqual(findSourceDirectories(root, { skip: skipOf(root) }), [path.join(root, 'lib')]);
+		assert.ok(withoutOs.includes('src'));
+		assert.ok(withoutOs.includes('features'));
+		assert.ok(!withoutOs.includes('lib'));
+		assert.ok(!withoutOs.includes('tests'));
 	});
 });

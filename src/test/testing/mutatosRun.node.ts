@@ -149,6 +149,20 @@ describe('mutatos: исключаемые каталоги', () => {
 
 		assert.deepEqual(excluded, ['oscript_modules', '.git']);
 	});
+
+	test('каталоги верхнего уровня без .os не копируются, исходники и тесты остаются', () => {
+		const lib = path.join(ROOT, 'lib');
+		const excluded = excludedDirectories({
+			root: ROOT,
+			sourcesDirs: [lib],
+			testsDirs: [TESTS],
+			outputDirs: [OUT],
+			topLevelWithoutOs: ['src', 'features', 'tools', 'lib', 'tests'],
+			hasTopLevel: noTopLevel,
+		});
+
+		assert.deepEqual(excluded, ['oscript_modules', '.git', 'out', 'build', 'src', 'features', 'tools']);
+	});
 });
 
 describe('mutatos: движок', () => {

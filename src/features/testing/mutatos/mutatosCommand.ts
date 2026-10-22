@@ -34,7 +34,7 @@ import {
 } from './mutatosRun';
 import { listFiles, parseMutationReport, summarizeReport, summaryData, summaryLine, type MutationSummary } from './mutatosReport';
 import { clearSurvivors, showSurvivors } from './mutatosDiagnostics';
-import { findSourceDirectories } from './mutatosSources';
+import { findSourceDirectories, topLevelWithoutOs } from './mutatosSources';
 
 const log = logger.scope('mutatos');
 
@@ -121,6 +121,7 @@ export async function runMutationTesting(
 		sourcesDirs,
 		testsDirs,
 		outputDirs,
+		topLevelWithoutOs: topLevelWithoutOs(root),
 		hasTopLevel: (name) => fs.existsSync(path.join(root, name)),
 	});
 
