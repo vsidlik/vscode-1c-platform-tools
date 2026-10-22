@@ -40,6 +40,16 @@ import { projectMemento, SERVER_PUBLICATION_STATE } from '../../shared/projectSt
 import { currentRoot, runWithProject, sameProjectRoot } from '../../shared/workspaceProjects';
 import { projectLabel } from '../../commands/projectScope';
 import { ensureWorkspaceTrusted } from '../../shared/workspaceTrust';
+import {
+	childExit,
+	pidSignalSender,
+	settlesWithin,
+	signalUntilExit,
+	waitProcessGone,
+	type ExitWaiter,
+	type StopSignal,
+} from '../../shared/processTermination';
+import { findDataDirHolder } from '../../shared/ibsrvDataLock';
 
 const log = logger.scope('server');
 
@@ -57,6 +67,27 @@ export const SWITCH_SERVER_PROJECT_ACTION = 'Остановить и запус�
  */
 export function serverProjectSwitchQuestion(owner: string, target: string): string {
 	return `Автономный сервер проекта ${owner} запущен. Остановить его и запустить для ${target}?`;
+}
+
+/** Кнопка завершения ibsrv, который держит каталог данных сервера. */
+export const STOP_DATA_DIR_HOLDER_ACTION = 'Завершить и запустить';
+
+/**
+ * Вопрос перед запуском сервера, когда его каталог данных держит другой процесс ibsrv.
+ *
+ * @param pid - Процесс, который держит каталог данных
+ */
+export function dataDirHolderQuestion(pid: number): string {
+	return `Каталог данных автономного сервера занят процессом ibsrv (pid ${pid}). Завершить его и запустить сервер?`;
+}
+
+/**
+ * Сообщение, когда процесс сервера не завершился.
+ *
+ * @param pid - Процесс ibsrv
+ */
+export function serverStopFailedMessage(pid: number | undefined): string {
+	return `Автономный сервер не остановился: процесс ibsrv${pid === undefined ? '' : ` (pid ${pid})`} не завершается. Подробности в журнале сервера.`;
 }
 
 /**
@@ -107,8 +138,23 @@ const READINESS_TIMEOUT_MS = 60_000;
 const READINESS_POLL_INTERVAL_MS = 500;
 /** Таймаут ожидания фактического завершения процесса при остановке, мс. */
 const STOP_EXIT_TIMEOUT_MS = 8_000;
+/** Таймаут ожидания завершения после повторного сигнала, мс. */
+const STOP_REPEAT_TIMEOUT_MS = 3_000;
 /** Таймаут ожидания освобождения порта при остановке, мс. */
 const STOP_PORT_TIMEOUT_MS = 8_000;
+
+/**
+ * Сигналы остановки ibsrv на macOS и Linux.
+ *
+ * На macOS ibsrv после первого SIGTERM останавливает сервер, но сам процесс
+ * может не выйти и продолжать держать каталог данных. Повторный SIGTERM его
+ * завершает, SIGKILL остаётся крайней мерой.
+ */
+const STOP_SIGNALS: readonly StopSignal[] = [
+	{ signal: 'SIGTERM', waitMs: STOP_EXIT_TIMEOUT_MS },
+	{ signal: 'SIGTERM', waitMs: STOP_REPEAT_TIMEOUT_MS },
+	{ signal: 'SIGKILL', waitMs: STOP_REPEAT_TIMEOUT_MS },
+];
 
 /**
  * Собирает аргументы запуска ibsrv.
@@ -159,10 +205,8 @@ export class PlatformServerManager {
 	/** Порт отладки текущего процесса, если сервер запущен с отладкой. */
 	private activeDebugPort: number | undefined;
 	private readonly willStopHooks = new Set<() => Promise<void>>();
-	/** Резолвер промиса фактического завершения текущего процесса. */
-	private exitResolve: (() => void) | undefined;
-	/** Промис, который разрешается, когда текущий процесс полностью завершился. */
-	private exitPromise: Promise<void> | undefined;
+	/** Идущая остановка: повторный вызов дожидается её, а не останавливает процесс второй раз. */
+	private stopping: Promise<boolean> | undefined;
 
 	/** Событие смены состояния сервера. */
 	public readonly onDidChangeState = this.stateEmitter.event;
@@ -193,10 +237,10 @@ export class PlatformServerManager {
 		return {
 			label: 'Автономный сервер',
 			heldInfobase: () => (this.ownerRoot === undefined ? undefined : this.runningIbPath),
-			release: async () => {
+			release: () => {
 				released = this.owner;
-				await this.stop();
-				return this._state === 'stopped';
+				// Сообщение о неудаче показывает команда, которой нужна база
+				return this.shutdown();
 			},
 			restore: () => this.start(released),
 		};
@@ -274,6 +318,12 @@ export class PlatformServerManager {
 			return;
 		}
 
+		// Новый процесс запускается только после выхода прежнего;
+		// о неудаче остановки сообщает тот, кто её начал
+		if (this.stopping && !(await this.shutdown())) {
+			return;
+		}
+
 		if (this._state === 'running' || this._state === 'starting') {
 			const owner = this.owner;
 			if (owner === undefined || sameProjectRoot(owner, workspaceRoot)) {
@@ -287,7 +337,13 @@ export class PlatformServerManager {
 			if (action !== SWITCH_SERVER_PROJECT_ACTION) {
 				return;
 			}
-			await this.stop();
+			if (!(await this.stop())) {
+				return;
+			}
+		} else if (this.child && !(await this.stop())) {
+			// Процесс, который не удалось остановить раньше: пока он жив,
+			// новый ibsrv на том же каталоге данных не стартует
+			return;
 		}
 
 		await runWithProject(workspaceRoot, () => this.startIn(workspaceRoot));
@@ -319,6 +375,10 @@ export class PlatformServerManager {
 		if (!ibPath) {
 			return;
 		}
+		const dataDir = this.getDataDir(workspaceRoot, settings);
+		if (!(await this.freeDataDir(dataDir))) {
+			return;
+		}
 		this.runningIbPath = ibPath;
 		this.owner = workspaceRoot;
 
@@ -326,7 +386,6 @@ export class PlatformServerManager {
 		this.output.show(true);
 		this.output.appendLine(`[${new Date().toLocaleTimeString()}] Запуск ibsrv: ${binary}`);
 
-		const dataDir = this.getDataDir(workspaceRoot, settings);
 		const configPath = path.join(dataDir, 'publication.yaml');
 		let params: { host: string; port: number; base: string; odata: boolean };
 		try {
@@ -352,7 +411,6 @@ export class PlatformServerManager {
 
 		const child = spawn(binary, args, { windowsHide: true });
 		this.child = child;
-		this.exitPromise = new Promise<void>((resolve) => { this.exitResolve = resolve; });
 
 		const stdoutDecoder = new ProcessOutputDecoder();
 		const stderrDecoder = new ProcessOutputDecoder();
@@ -363,9 +421,11 @@ export class PlatformServerManager {
 			this.fail(`Ошибка запуска ibsrv: ${error.message}`);
 		});
 		child.on('exit', (code, signal) => {
+			// Остановленный нами или уже заменённый процесс состояние сервера не меняет
+			if (this.child !== child) {
+				return;
+			}
 			this.child = undefined;
-			this.exitResolve?.();
-			this.exitResolve = undefined;
 			if (this._state === 'starting' || this._state === 'running') {
 				// Незапланированное завершение
 				this.output.appendLine(`ibsrv завершился (code=${code}, signal=${signal})`);
@@ -393,10 +453,44 @@ export class PlatformServerManager {
 	/**
 	 * Останавливает автономный сервер (вместе с дочерними процессами).
 	 *
-	 * Дожидается фактического завершения процесса и освобождения порта, чтобы
-	 * последующий запуск (в т.ч. перезапуск) не наткнулся на занятый порт.
+	 * Если процесс так и не завершился, показывает ошибку. Процесс остаётся
+	 * под присмотром менеджера: повторная остановка и запуск попробуют
+	 * завершить его снова.
+	 *
+	 * @returns true, если сервер остановлен
 	 */
-	public async stop(): Promise<void> {
+	public async stop(): Promise<boolean> {
+		if (await this.shutdown()) {
+			return true;
+		}
+		void vscode.window.showErrorMessage(serverStopFailedMessage(this.child?.pid));
+		return false;
+	}
+
+	/**
+	 * Останавливает сервер без сообщений пользователю.
+	 *
+	 * Одновременные вызовы дожидаются одной и той же остановки.
+	 *
+	 * @returns true, если процесса сервера больше нет
+	 */
+	private shutdown(): Promise<boolean> {
+		this.stopping ??= this.stopProcess().finally(() => {
+			this.stopping = undefined;
+		});
+		return this.stopping;
+	}
+
+	/**
+	 * Останавливает процесс сервера.
+	 *
+	 * Дожидается фактического завершения процесса и освобождения порта, чтобы
+	 * последующий запуск (в т.ч. перезапуск) не наткнулся на занятый каталог
+	 * данных или порт.
+	 *
+	 * @returns true, если процесса сервера больше нет
+	 */
+	private async stopProcess(): Promise<boolean> {
 		const child = this.child;
 		if (!child || child.pid === undefined) {
 			this.setState('stopped');
@@ -404,14 +498,15 @@ export class PlatformServerManager {
 			this.activeConfig = undefined;
 			this.runningIbPath = undefined;
 			this.owner = undefined;
-			return;
+			return true;
 		}
 
 		await Promise.all([...this.willStopHooks].map((hook) => hook().catch((error: unknown) => {
 			log.warn(`перед остановкой сервера: ${(error as Error).message}`);
 		})));
 		if (this.child !== child) {
-			return;
+			// Процесс вышел сам, пока шли действия перед остановкой
+			return true;
 		}
 
 		const active = this.activeConfig;
@@ -422,9 +517,16 @@ export class PlatformServerManager {
 		this.setState('stopped');
 		this.currentUrls = undefined;
 
-		await this.killProcessTree(pid);
-		// Ждём реального выхода процесса, затем освобождения порта.
-		await Promise.race([this.exitPromise ?? Promise.resolve(), delay(STOP_EXIT_TIMEOUT_MS)]);
+		if (!(await this.terminate(child))) {
+			// Процесс жив и держит каталог данных: остаётся за менеджером, чтобы его видели
+			// повторная остановка и запуск, а команды не открывали базу вслепую
+			this.child = child;
+			const message = `ibsrv (pid ${pid}) не завершился.`;
+			log.error(message);
+			this.output.appendLine(message);
+			this.setState('error');
+			return false;
+		}
 		if (active) {
 			const freed = await this.waitPortFree(active.host, active.port, STOP_PORT_TIMEOUT_MS);
 			if (!freed) {
@@ -432,21 +534,22 @@ export class PlatformServerManager {
 			}
 		}
 		this.activeConfig = undefined;
-		this.exitPromise = undefined;
 		this.runningIbPath = undefined;
 		this.owner = undefined;
+		return true;
 	}
 
 	/**
 	 * Перезапускает сервер (корректно завершает текущий процесс перед стартом).
 	 *
 	 * Запущенный сервер перезапускается для своего проекта, остановленный
-	 * запускается для текущего.
+	 * запускается для текущего. Если процесс не остановился, новый не запускается.
 	 */
 	public async restart(): Promise<void> {
 		const root = this.ownerRoot ?? currentRoot();
-		await this.stop();
-		await this.start(root);
+		if (await this.stop()) {
+			await this.start(root);
+		}
 	}
 
 	/** Показывает журнал сервера. */
@@ -486,9 +589,23 @@ export class PlatformServerManager {
 		await vscode.window.showTextDocument(doc);
 	}
 
-	/** Освобождает ресурсы и останавливает сервер. */
+	/**
+	 * Освобождает ресурсы и останавливает сервер.
+	 *
+	 * Окно закрывается или перезагружается: дождаться выхода процесса и писать в
+	 * журнал уже нельзя, поэтому сигнал остановки уходит сразу. Процесс, который
+	 * после него не выйдет, следующий запуск сервера найдёт по `lock.pid`.
+	 */
 	public dispose(): void {
-		void this.stop();
+		const child = this.child;
+		this.child = undefined;
+		if (child?.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+			if (process.platform === 'win32') {
+				void killWindowsProcessTree(child.pid);
+			} else {
+				child.kill('SIGTERM');
+			}
+		}
 		this.stateEmitter.dispose();
 		this.output.dispose();
 	}
@@ -810,7 +927,7 @@ export class PlatformServerManager {
 		}
 
 		this.fail(`Сервер не ответил за ${READINESS_TIMEOUT_MS / 1000} с (${urls.root}).`);
-		await this.killProcessTree(child.pid);
+		await this.terminate(child);
 		return false;
 	}
 
@@ -848,32 +965,103 @@ export class PlatformServerManager {
 	}
 
 	/**
-	 * Принудительно завершает дерево процессов сервера.
+	 * Завершает процесс сервера и дожидается его выхода.
 	 *
 	 * На Windows ibsrv может порождать дочерние процессы — используем taskkill /t.
+	 * На macOS и Linux сигналы идут по очереди ({@link STOP_SIGNALS}), пока процесс
+	 * не выйдет.
+	 *
+	 * @param child - Процесс сервера
+	 * @returns true, если процесс вышел
 	 */
-	private killProcessTree(pid: number | undefined): Promise<void> {
-		if (pid === undefined) {
-			return Promise.resolve();
-		}
-		return new Promise((resolve) => {
-			if (process.platform === 'win32') {
-				exec(`taskkill /pid ${pid} /t /f`, (error) => {
-					if (error) {
-						log.warn(`taskkill для pid ${pid}: ${error.message}`);
-					}
-					resolve();
-				});
-			} else {
-				try {
-					process.kill(pid, 'SIGTERM');
-				} catch (error) {
-					log.warn(`Не удалось завершить процесс ${pid}: ${(error as Error).message}`);
-				}
-				resolve();
+	private async terminate(child: ChildProcess): Promise<boolean> {
+		const exit = childExit(child);
+		const waitExit: ExitWaiter = (timeoutMs) => settlesWithin(exit, timeoutMs);
+		if (process.platform === 'win32') {
+			if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+				await killWindowsProcessTree(child.pid);
 			}
-		});
+			return waitExit(STOP_EXIT_TIMEOUT_MS);
+		}
+		return signalUntilExit((signal) => child.kill(signal), STOP_SIGNALS, waitExit, (next, previous) =>
+			this.reportRepeatedSignal(next, previous)
+		);
 	}
+
+	/**
+	 * Освобождает каталог данных сервера от процесса ibsrv, который его держит.
+	 *
+	 * ibsrv не стартует, пока жив процесс из `lock.pid` каталога данных. Такой
+	 * процесс остаётся, например, после перезагрузки окна, если расширение не
+	 * дождалось его выхода. Завершается он только с согласия пользователя:
+	 * каталог может держать и сервер, запущенный в другом окне.
+	 *
+	 * @param dataDir - Каталог данных сервера
+	 * @returns true, если каталог свободен
+	 */
+	private async freeDataDir(dataDir: string): Promise<boolean> {
+		const pid = await findDataDirHolder(dataDir);
+		if (pid === undefined) {
+			return true;
+		}
+		const action = await vscode.window.showWarningMessage(dataDirHolderQuestion(pid), STOP_DATA_DIR_HOLDER_ACTION);
+		if (action !== STOP_DATA_DIR_HOLDER_ACTION) {
+			return false;
+		}
+
+		this.output.appendLine(`[${new Date().toLocaleTimeString()}] Остановка ibsrv (pid ${pid}), который держит каталог данных`);
+		let stopped: boolean;
+		try {
+			if (process.platform === 'win32') {
+				await killWindowsProcessTree(pid);
+				stopped = await waitProcessGone(pid, STOP_EXIT_TIMEOUT_MS);
+			} else {
+				stopped = await signalUntilExit(
+					pidSignalSender(pid),
+					STOP_SIGNALS,
+					(timeoutMs) => waitProcessGone(pid, timeoutMs),
+					(next, previous) => this.reportRepeatedSignal(next, previous)
+				);
+			}
+		} catch (error) {
+			log.warn(`Не удалось завершить процесс ${pid}: ${(error as Error).message}`);
+			stopped = false;
+		}
+		if (!stopped) {
+			const message = `Не удалось завершить ibsrv (pid ${pid}). Завершите процесс вручную и запустите сервер снова.`;
+			this.output.appendLine(message);
+			vscode.window.showErrorMessage(message);
+		}
+		return stopped;
+	}
+
+	/**
+	 * Пишет в журнал сервера, что процесс не вышел и ему отправляется следующий сигнал.
+	 *
+	 * @param next - Следующий сигнал
+	 * @param previous - Сигнал, после которого процесс не вышел
+	 */
+	private reportRepeatedSignal(next: StopSignal, previous: StopSignal): void {
+		this.output.appendLine(
+			`[${new Date().toLocaleTimeString()}] ibsrv не завершился за ${previous.waitMs / 1000} с после ${previous.signal}, отправка ${next.signal}`
+		);
+	}
+}
+
+/**
+ * Принудительно завершает дерево процессов на Windows.
+ *
+ * @param pid - Корневой процесс
+ */
+function killWindowsProcessTree(pid: number): Promise<void> {
+	return new Promise((resolve) => {
+		exec(`taskkill /pid ${pid} /t /f`, (error) => {
+			if (error) {
+				log.warn(`taskkill для pid ${pid}: ${error.message}`);
+			}
+			resolve();
+		});
+	});
 }
 
 /**
