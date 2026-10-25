@@ -22,7 +22,7 @@ const MODE_ENV = 'PLATFORM_TOOLS_FAKE_IBSRV_MODE';
 /**
  * Поддельный ibsrv: публикует по HTTP порт из конфига и держит каталог данных
  * через lock.pid, как настоящий. В режиме macos по SIGTERM останавливает
- * сервер, но процесс выходит только по следующему сигналу (#565).
+ * сервер, но процесс выходит только по следующему сигналу.
  */
 const FAKE_IBSRV = `
 const fs = require('node:fs');
@@ -66,7 +66,7 @@ function freePort(): Promise<number> {
 	});
 }
 
-suite('остановка автономного сервера (#565)', () => {
+suite('остановка автономного сервера', () => {
 	const config = () => vscode.workspace.getConfiguration('1c-platform-tools');
 	let root: string;
 	let dataDir: string;

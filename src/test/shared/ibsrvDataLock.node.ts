@@ -1,5 +1,5 @@
 /**
- * Процесс ibsrv, который держит каталог данных сервера (#565).
+ * Процесс ibsrv, который держит каталог данных сервера.
  * Запуск: npm run test:node
  */
 import { after, before, describe, test } from 'node:test';

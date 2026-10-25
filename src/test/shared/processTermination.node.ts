@@ -1,6 +1,6 @@
 /**
  * Остановка процесса с ожиданием выхода: на живых процессах, которые ведут себя
- * как ibsrv на macOS (#565).
+ * как ibsrv на macOS.
  * Запуск: npm run test:node
  */
 import { describe, test } from 'node:test';
