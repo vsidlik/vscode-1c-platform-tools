@@ -39,6 +39,8 @@ const HIDDEN_PREFIXES = [
 	`${COMMAND_PREFIX}mcp.`,
 	`${COMMAND_PREFIX}refresh`,
 	`${COMMAND_PREFIX}env.createProfile`,
+	`${COMMAND_PREFIX}env.createEnvironment`,
+	`${COMMAND_PREFIX}env.openEnvironment`,
 	`${COMMAND_PREFIX}env.setOverrides`,
 	`${COMMAND_PREFIX}env.statusBarRefresh`,
 	`${COMMAND_PREFIX}dependencies.setupGit`,
@@ -100,9 +102,11 @@ const HIDDEN_EXACT = [
 	// конкретный файл (createEnvJson и другие) агенту доступны
 	`${COMMAND_PREFIX}serviceFiles.create`,
 	// Конструкторы пайплайнов и хуков: агент правит `.1cpt/pipelines.json` и
-	// `.1cpt/hooks.json` файлами, запуск цепочки ему доступен командой pipelines.run
+	// `.1cpt/hooks.json` файлами, запуск цепочки ему доступен командой pipelines.run,
+	// профиль и окружение прогона — её параметрами
 	`${COMMAND_PREFIX}pipelines.openEditor`,
 	`${COMMAND_PREFIX}pipelines.addTemplates`,
+	`${COMMAND_PREFIX}pipelines.runWith`,
 	`${COMMAND_PREFIX}hooks.openEditor`,
 	// Сохранение формы: приходит по Ctrl+S из активного редактора или панели свойств
 	`${COMMAND_PREFIX}editors.save`,

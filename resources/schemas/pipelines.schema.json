@@ -113,6 +113,7 @@
                     "1c-platform-tools.env.clearOverrides",
                     "1c-platform-tools.env.editSettingsFile",
                     "1c-platform-tools.env.openProfileEditor",
+                    "1c-platform-tools.env.selectEnvironment",
                     "1c-platform-tools.env.selectProfile",
                     "1c-platform-tools.epf.addBspRegistration",
                     "1c-platform-tools.epf.clearCache",
@@ -185,6 +186,19 @@
                 "script": {
                   "type": "string",
                   "description": "Командная строка, выполняется в корне проекта (type: shell)"
+                },
+                "profile": {
+                  "type": "string",
+                  "description": "Профиль запуска шага: идентификатор, default — «По умолчанию», @editor — как выбрано в редакторе; без поля — как у пайплайна",
+                  "minLength": 1
+                },
+                "environment": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Окружение шага: имя, null — по умолчанию, @editor — как выбрано в редакторе; без поля — как у пайплайна",
+                  "minLength": 1
                 },
                 "timeout": {
                   "type": "number",
@@ -264,6 +278,19 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "profile": {
+            "type": "string",
+            "description": "Профиль запуска шагов: идентификатор, default — «По умолчанию»; @editor или без поля — как выбрано в редакторе",
+            "minLength": 1
+          },
+          "environment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Окружение шагов: имя, null — по умолчанию; @editor или без поля — как выбрано в редакторе",
+            "minLength": 1
           }
         },
         "additionalProperties": false
