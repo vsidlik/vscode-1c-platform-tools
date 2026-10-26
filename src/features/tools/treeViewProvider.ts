@@ -518,7 +518,7 @@ export class PlatformTreeDataProvider implements vscode.TreeDataProvider<Platfor
 	}
 
 	/**
-	 * Строка «Типовые пайплайны» рядом с файлом цепочек.
+	 * Строка «1cpt: pipeline templates» рядом с файлом цепочек.
 	 *
 	 * Значок как у служебного файла: плюс, пока типовых цепочек в проекте нет,
 	 * и галка, когда они уже стоят.
@@ -530,10 +530,10 @@ export class PlatformTreeDataProvider implements vscode.TreeDataProvider<Platfor
 		const pipelines = workspaceRoot ? await readPipelines(workspaceRoot) : [];
 		const installed = pipelines.some((pipeline) => pipeline.id.startsWith(PIPELINE_TEMPLATE_ID_PREFIX));
 		const item = this.createTreeItem(
-			'1cpt: типовые пайплайны',
+			'1cpt: pipeline templates',
 			TreeItemType.Task,
 			vscode.TreeItemCollapsibleState.None,
-			{ command: '1c-platform-tools.pipelines.addTemplates', title: '1cpt: типовые пайплайны' },
+			{ command: '1c-platform-tools.pipelines.addTemplates', title: '1cpt: pipeline templates' },
 			undefined,
 			undefined,
 			undefined,

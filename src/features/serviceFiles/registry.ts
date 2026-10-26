@@ -117,7 +117,7 @@ export const SERVICE_FILES: ServiceFileSpec[] = [
 	{
 		id: 'pipelines',
 		relPath: '.1cpt/pipelines.json',
-		label: '1cpt: пайплайны',
+		label: '1cpt: pipelines',
 		description: '.1cpt/pipelines.json — графы шагов: команды, оболочка, паузы',
 		recommended: false,
 	},

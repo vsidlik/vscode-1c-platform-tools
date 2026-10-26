@@ -23,7 +23,7 @@
 | **YaXunit: параметры** | `tools/yaxunit.json` | конфигурация YAxUnit | нет |
 | **Syntax: исключения** | `tools/syntax-check-excludes.txt` | исключения синтаксического контроля | нет |
 | **1cpt: hooks** | `.1cpt/hooks.json` | [хуки](automation.md#хуки-команд) `pre`/`post`/`onError` на команды расширения | нет |
-| **1cpt: пайплайны** | `.1cpt/pipelines.json` | [пайплайны](automation.md#пайплайны): графы шагов с визуальным редактором | нет |
+| **1cpt: pipelines** | `.1cpt/pipelines.json` | [пайплайны](automation.md#пайплайны): графы шагов с визуальным редактором | нет |
 
 Имя файла зависит от установленного vanessa-runner: `env.json` для 2.x, `autumn-properties.json` для 3.x.
 
