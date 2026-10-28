@@ -46,6 +46,9 @@ const MAX_TOOL_NAME_LENGTH = 60 - MCP_SERVER_NAME.length - 2;
 /** Имя инструмента: домен и одно или несколько слов через `_`. */
 const TOOL_NAME = /^[a-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+$/;
 
+/** Инструменты самого сервера: заглушка, пока сервер не нашёл окно. */
+const SERVER_TOOLS = new Set(['onec_platform_tools_status']);
+
 const TEST_EXTENSION_TOOLS = new Set([
 	'test_loadExts',
 	'test_dumpExts',
@@ -225,7 +228,7 @@ describe('навыки и имена MCP', () => {
 				if (token.includes('_*')) {
 					wildcards.push(`${rel}: ${token}`);
 				}
-				if (TOOL_NAME.test(token) && !toolSet.has(token)) {
+				if (TOOL_NAME.test(token) && !toolSet.has(token) && !SERVER_TOOLS.has(token)) {
 					unknownTools.push(`${rel}: ${token}`);
 				}
 				if (/^1c-platform-tools\.[A-Za-z0-9.]+$/.test(token) && !catalog.knownIds.has(token)) {
