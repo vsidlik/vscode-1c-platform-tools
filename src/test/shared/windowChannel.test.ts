@@ -2,43 +2,9 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import * as vscode from 'vscode';
-import type { PlatformToolsApi } from '../../app/extensionApi';
 import { WindowChannel, type ChannelServerFactory } from '../../shared/windowChannel';
 import { setWorkspaceTrustProbe } from '../../shared/workspaceTrust';
-
-const EXTENSION_ID = 'yellow-hammer.1c-platform-tools';
-
-/** Ответ канала: ping, отказ или метка тестового сервера. */
-interface ChannelResponse {
-	result?: { ok?: boolean; extensionId?: string; label?: string };
-	error?: { code?: string };
-}
-
-/**
- * Отправляет запрос в канал и ждёт первую строку ответа.
- *
- * @param location - Путь канала
- * @param payload - Тело запроса
- * @returns Разобранный ответ
- */
-function request(location: string, payload: Record<string, unknown>): Promise<ChannelResponse> {
-	return new Promise((resolve, reject) => {
-		const socket = net.connect(location);
-		let buffer = '';
-		socket.setEncoding('utf8');
-		socket.on('error', reject);
-		socket.on('connect', () => socket.write(`${JSON.stringify(payload)}\n`));
-		socket.on('data', (chunk: string) => {
-			buffer += chunk;
-			const end = buffer.indexOf('\n');
-			if (end !== -1) {
-				socket.destroy();
-				resolve(JSON.parse(buffer.slice(0, end)) as ChannelResponse);
-			}
-		});
-	});
-}
+import { channelRequest as request } from '../fixtures/helpers/channelRequest';
 
 /** Сервер канала, который отвечает своей меткой: по ней видно, в какое окно попал запрос. */
 function labelledServer(label: string): ChannelServerFactory {
@@ -50,27 +16,6 @@ function labelledServer(label: string): ChannelServerFactory {
 
 suite('канал окна для MCP-сервера', () => {
 	teardown(() => setWorkspaceTrustProbe());
-
-	test('API расширения отдаёт адрес канала, канал отвечает только с токеном сессии', async function () {
-		this.timeout(30_000);
-		const extension = vscode.extensions.getExtension<PlatformToolsApi>(EXTENSION_ID);
-		assert.ok(extension, 'расширение должно быть в хосте тестов');
-		const api = await extension.activate();
-
-		const endpoint = await api.getMcpChannel();
-		assert.ok(endpoint, 'канал окна должен открыться');
-		assert.deepStrictEqual(await api.getMcpChannel(), endpoint, 'повторный запрос должен давать тот же адрес');
-
-		const ping = await request(endpoint.path, { id: '1', method: 'ping', token: endpoint.token });
-		assert.strictEqual(ping.result?.ok, true);
-		assert.strictEqual(ping.result?.extensionId, EXTENSION_ID);
-
-		const withoutToken = await request(endpoint.path, { id: '2', method: 'ping' });
-		assert.strictEqual(withoutToken.error?.code, 'UNAUTHORIZED');
-
-		const otherToken = await request(endpoint.path, { id: '3', method: 'ping', token: 'f'.repeat(64) });
-		assert.strictEqual(otherToken.error?.code, 'UNAUTHORIZED');
-	});
 
 	test('у каждого окна свой канал и свой токен', async () => {
 		const first = new WindowChannel(labelledServer('первое'));

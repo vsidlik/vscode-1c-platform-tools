@@ -158,7 +158,7 @@ async function resolveCommandRoot(
 	if (resolved.error === 'WORKSPACE_MISMATCH') {
 		return {
 			error: {
-				message: 'Путь projectPath лежит вне папок рабочей области VS Code',
+				message: 'Путь projectPath лежит вне папок рабочей области этого окна',
 				code: 'WORKSPACE_MISMATCH',
 				details: { projectPath: resolved.projectPath, workspaceRoots: folders, projects },
 			},
@@ -601,9 +601,6 @@ export function openIpcChannel(config: IpcServerConfig, extensionId: string): ne
 
 /**
  * Поднимает TCP-канал по настройкам и заводит канал окна для MCP-сервера.
- *
- * TCP-канал нужен Cursor и внешним клиентам, MCP-сервер VS Code подключается к
- * каналу окна через API расширения.
  *
  * @param context - Контекст расширения
  * @returns Канал окна; открывается при первом запросе адреса

@@ -1,17 +1,19 @@
 import * as vscode from 'vscode';
 import { registerRunCommandFileWatcher } from '../shared/runCommandFromFileWatcher';
 import { startIpcServer } from '../shared/ipcServer';
-import type { WindowChannel } from '../shared/windowChannel';
+import { WindowRegistration } from '../shared/windowRegistration';
+import { workspaceProjectsSource } from '../features/projects/workspaceProjectsSource';
 import { registerServiceFolderDecoration } from '../features/serviceFiles/serviceFolderDecoration';
 
 /**
  * Регистрирует инфраструктурные сервисы расширения.
  *
- * @returns Канал окна для MCP-сервера
+ * @returns Запись окна в реестре окон для MCP-сервера
  */
-export function registerInfrastructure(context: vscode.ExtensionContext): WindowChannel {
+export function registerInfrastructure(context: vscode.ExtensionContext): WindowRegistration {
 	registerRunCommandFileWatcher(context);
-	const windowChannel = startIpcServer(context);
+	const windowRegistration = new WindowRegistration(startIpcServer(context), workspaceProjectsSource());
+	context.subscriptions.push(windowRegistration);
 	registerServiceFolderDecoration(context);
-	return windowChannel;
+	return windowRegistration;
 }

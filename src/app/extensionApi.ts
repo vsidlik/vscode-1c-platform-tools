@@ -1,29 +1,29 @@
-import type { WindowChannel, WindowChannelEndpoint } from '../shared/windowChannel';
+import type { WindowRegistration } from '../shared/windowRegistration';
 
 /**
  * API расширения для других расширений.
  *
- * Его читает 1C: Platform Tools MCP: адрес канала окна уходит MCP-серверу
- * переменными окружения, и агент работает с тем окном, в котором запущен.
+ * Его читает 1C: Platform Tools MCP: MCP-сервер, который запускает VS Code,
+ * получает окно, из которого запущен, и работает с ним.
  */
 export interface PlatformToolsApi {
 	/**
-	 * Адрес канала окна для MCP-сервера; при первом вызове канал открывается.
+	 * Окно в реестре окон для MCP-сервера; при первом вызове открывается канал окна.
 	 *
-	 * @returns Путь канала и токен сессии либо undefined, если папке не доверяют
-	 *   или канал не открылся
+	 * @returns Идентификатор окна либо undefined, если папке не доверяют или
+	 *   канал не открылся
 	 */
-	getMcpChannel(): Promise<WindowChannelEndpoint | undefined>;
+	getMcpWindow(): Promise<string | undefined>;
 }
 
 /**
  * Собирает API расширения.
  *
- * @param channel - Канал окна для MCP-сервера
+ * @param registration - Запись окна в реестре окон
  * @returns API, которое возвращает активация
  */
-export function createExtensionApi(channel: WindowChannel): PlatformToolsApi {
+export function createExtensionApi(registration: WindowRegistration): PlatformToolsApi {
 	return {
-		getMcpChannel: () => channel.endpoint(),
+		getMcpWindow: () => registration.windowId(),
 	};
 }

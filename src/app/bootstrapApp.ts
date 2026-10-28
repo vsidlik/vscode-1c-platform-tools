@@ -141,7 +141,7 @@ export async function bootstrapApp(context: vscode.ExtensionContext): Promise<Pl
 		projectsCommandDisposables,
 		onProjectsConfigChange,
 	} = await registerProjectsRuntime(onArtifactsExcludeChanged);
-	const windowChannel = registerInfrastructure(context);
+	const windowRegistration = registerInfrastructure(context);
 	runPostOpenProjectWorkflow(context, () => commands.dependencies.installDependencies());
 
 	const { todoFeatureDisposables } = registerTodoFlow(context, isProjectRef);
@@ -164,5 +164,5 @@ export async function bootstrapApp(context: vscode.ExtensionContext): Promise<Pl
 		...commandDisposables
 	);
 
-	return createExtensionApi(windowChannel);
+	return createExtensionApi(windowRegistration);
 }
