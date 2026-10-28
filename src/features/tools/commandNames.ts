@@ -180,6 +180,17 @@ export function getConfigureCursorMcpCommandName(): CommandNameAndTitle {
 }
 
 /**
+ * Получить название и заголовок для команды настройки MCP для Claude Code
+ */
+export function getConfigureClaudeCodeMcpCommandName(): CommandNameAndTitle {
+	return {
+		id: '1c-platform-tools.mcp.configureClaudeCode',
+		name: 'Настроить MCP для Claude Code',
+		title: 'Настроить MCP для Claude Code'
+	};
+}
+
+/**
  * Получить название и заголовок для команды добавления навыков разработки 1С (cc-1c-skills)
  */
 export function getAddDevSkillsCommandName(): CommandNameAndTitle {

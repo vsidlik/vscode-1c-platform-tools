@@ -33,6 +33,33 @@ function registerProjectCommand<A extends unknown[], R>(id: string, handler: (..
 }
 
 /**
+ * Регистрирует настройку MCP для агента: команда живёт в расширении 1C: Platform
+ * Tools MCP, оно пишет конфиг агента с актуальным путём к своему серверу.
+ *
+ * @param id - Команда этого расширения
+ * @param mcpCommand - Команда расширения 1C: Platform Tools MCP
+ * @returns Регистрация команды
+ */
+function registerMcpConfigCommand(id: string, mcpCommand: string): vscode.Disposable {
+	return registerProjectCommand(id, async () => {
+		const mcpExtension = vscode.extensions.getExtension('yellow-hammer.mcp-1c-platform-tools');
+		if (!mcpExtension) {
+			const install = 'Установить расширение';
+			const action = await vscode.window.showWarningMessage(
+				'Расширение «1C: Platform Tools MCP» не установлено: оно предоставляет MCP-сервер и настраивает его для агентов.',
+				install
+			);
+			if (action === install) {
+				await vscode.commands.executeCommand('workbench.extensions.search', 'yellow-hammer.mcp-1c-platform-tools');
+			}
+			return;
+		}
+		await mcpExtension.activate();
+		await vscode.commands.executeCommand(mcpCommand);
+	});
+}
+
+/**
  * Объект со всеми командами расширения
  */
 interface Commands {
@@ -111,27 +138,8 @@ export function registerCommands(
 
 	// Команды навыков для AI
 	const skillsCommands = [
-		registerProjectCommand('1c-platform-tools.mcp.configureCursor', async () => {
-			// Команда живёт в расширении 1C: Platform Tools MCP: оно пишет
-			// .cursor/mcp.json с актуальным путём к своему серверу
-			const mcpExtension = vscode.extensions.getExtension('yellow-hammer.mcp-1c-platform-tools');
-			if (!mcpExtension) {
-				const install = 'Установить расширение';
-				const action = await vscode.window.showWarningMessage(
-					'Расширение «1C: Platform Tools MCP» не установлено: оно предоставляет MCP-сервер и настраивает его для Cursor.',
-					install
-				);
-				if (action === install) {
-					await vscode.commands.executeCommand(
-						'workbench.extensions.search',
-						'yellow-hammer.mcp-1c-platform-tools'
-					);
-				}
-				return;
-			}
-			await mcpExtension.activate();
-			await vscode.commands.executeCommand('mcp-1c-platform-tools.configureCursor');
-		}),
+		registerMcpConfigCommand('1c-platform-tools.mcp.configureCursor', 'mcp-1c-platform-tools.configureCursor'),
+		registerMcpConfigCommand('1c-platform-tools.mcp.configureClaudeCode', 'mcp-1c-platform-tools.configureClaudeCode'),
 		registerProjectCommand('1c-platform-tools.skills.addDevSkills', (destination?: unknown) => {
 			if (isAgentOptions(destination)) {
 				return agentInteractiveError('Передайте назначение строкой: claude, cursor, copilot или путь к папке.');

@@ -80,6 +80,7 @@ suite('mcpCommandPolicy', () => {
 			'1c-platform-tools.tools.openSettings',
 			'1c-platform-tools.tools.refresh',
 			'1c-platform-tools.mcp.configureCursor',
+			'1c-platform-tools.mcp.configureClaudeCode',
 			'1c-platform-tools.metadata.openViewer',
 			'1c-platform-tools.env.createProfile',
 			'1c-platform-tools.env.setOverrides',

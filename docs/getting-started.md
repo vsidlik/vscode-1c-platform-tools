@@ -14,7 +14,7 @@
 | Cursor, Windsurf, VSCodium | [Open VSX](https://open-vsx.org/extension/yellow-hammer/1c-platform-tools) |
 | Без доступа к маркетплейсу | файл `.vsix` из [релизов](https://github.com/yellow-hammer/vscode-1c-platform-tools/releases), `Extensions: Install from VSIX…` |
 
-В Cursor работают те же панели и команды; MCP там подключается своим файлом `.cursor/mcp.json` — его пишет команда расширения, см. [MCP-сервер](https://yellow-hammer.github.io/vscode-1c-platform-tools/mcp/).
+В Cursor работают те же панели и команды. MCP-сервер Cursor берёт из `.cursor/mcp.json`, Claude Code — из `.mcp.json`: оба файла пишут команды расширения, порт и токен в них не нужны, см. [MCP-сервер](https://yellow-hammer.github.io/vscode-1c-platform-tools/mcp/).
 
 Расширение активируется, когда в рабочей области есть [проект](projects.md): каталог с файлом `packagedef`. Панели **1С: Проекты** и **1С: Администрирование** работают и без открытого проекта: первая поможет найти и открыть нужный, вторая не привязана к рабочей области вовсе.
 
