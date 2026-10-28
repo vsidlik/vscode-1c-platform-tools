@@ -17,6 +17,7 @@ import { extractCommandFlags, resolveRequestDirectory, resolveRequestRoot } from
 import { hasProjectFile } from './projectLayout';
 import { normalizeProjectRoot, runWithProject } from './workspaceProjects';
 import { isWorkspaceTrusted, onWorkspaceTrustGranted, WORKSPACE_TRUST_REQUIRED } from './workspaceTrust';
+import { WindowChannel } from './windowChannel';
 import { initializeChoices } from '../features/projects/projectInitialization';
 import { workspaceProjectsSource, type WorkspaceProjectsSource } from '../features/projects/workspaceProjectsSource';
 
@@ -421,7 +422,16 @@ function createResponseForError(id: unknown, error: unknown): IpcResponse {
 	};
 }
 
-function createServer(config: IpcServerConfig, extensionId: string): net.Server {
+/**
+ * Сервер канала: разбирает запросы и выполняет их.
+ *
+ * Один и тот же для TCP-канала и канала окна, отличаются они только токеном.
+ *
+ * @param token - Токен, без которого запрос не выполняется; null — без проверки
+ * @param extensionId - Идентификатор расширения для ответа ping
+ * @returns Сервер, который ещё не слушает
+ */
+function createServer(token: string | null, extensionId: string): net.Server {
 	return net.createServer((socket) => {
 		log.debug('новое соединение');
 
@@ -468,7 +478,7 @@ function createServer(config: IpcServerConfig, extensionId: string): net.Server 
 					void (async () => {
 						const method = request.method;
 
-						if (config.token) {
+						if (token) {
 							if (typeof request.token !== 'string') {
 								writeResponse({
 									...buildResponseBase(request.id),
@@ -480,7 +490,7 @@ function createServer(config: IpcServerConfig, extensionId: string): net.Server 
 								return;
 							}
 
-							const expected = Buffer.from(config.token, 'utf8');
+							const expected = Buffer.from(token, 'utf8');
 							const actual = Buffer.from(request.token, 'utf8');
 							if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
 								writeResponse({
@@ -584,12 +594,21 @@ export function openIpcChannel(config: IpcServerConfig, extensionId: string): ne
 		log.debug('сервер отключен настройкой 1c-platform-tools.ipc.enabled');
 		return null;
 	}
-	const server = createServer(config, extensionId);
+	const server = createServer(config.token, extensionId);
 	listenServer(server, config);
 	return server;
 }
 
-export function startIpcServer(context: vscode.ExtensionContext): void {
+/**
+ * Поднимает TCP-канал по настройкам и заводит канал окна для MCP-сервера.
+ *
+ * TCP-канал нужен Cursor и внешним клиентам, MCP-сервер VS Code подключается к
+ * каналу окна через API расширения.
+ *
+ * @param context - Контекст расширения
+ * @returns Канал окна; открывается при первом запросе адреса
+ */
+export function startIpcServer(context: vscode.ExtensionContext): WindowChannel {
 	const extensionId = 'yellow-hammer.1c-platform-tools';
 	let config = readConfig();
 	let activeServer: net.Server | null = null;
@@ -607,6 +626,8 @@ export function startIpcServer(context: vscode.ExtensionContext): void {
 
 	start();
 
+	const windowChannel = new WindowChannel((token) => createServer(token, extensionId));
+
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration((e) => {
 			if (e.affectsConfiguration('1c-platform-tools.ipc')) {
@@ -621,5 +642,7 @@ export function startIpcServer(context: vscode.ExtensionContext): void {
 			start();
 		}),
 		{ dispose: stop },
+		windowChannel,
 	);
+	return windowChannel;
 }

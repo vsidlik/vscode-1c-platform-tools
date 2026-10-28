@@ -4546,19 +4546,19 @@
           "1c-platform-tools.ipc.enabled": {
             "type": "boolean",
             "default": false,
-            "description": "Включить IPC-сервер для взаимодействия с внешним MCP-сервером (mcp-1c-platform-tools). При включении расширение поднимает локальный TCP-сервер на указанном порту."
+            "description": "Открыть TCP-канал для MCP-сервера (mcp-1c-platform-tools) в Cursor и внешних клиентах: расширение слушает указанный порт. В VS Code MCP-сервер подключается к своему окну без порта, включать не нужно."
           },
           "1c-platform-tools.ipc.port": {
             "type": "number",
             "default": 40241,
             "minimum": 1,
             "maximum": 65535,
-            "description": "Порт TCP для IPC-сервера (localhost). MCP-сервер mcp-1c-platform-tools должен использовать тот же порт (переменная окружения ONEC_IPC_PORT)."
+            "description": "Порт TCP-канала (localhost). MCP-сервер mcp-1c-platform-tools должен использовать тот же порт (переменная окружения ONEC_IPC_PORT). У одновременно открытых окон порты должны различаться."
           },
           "1c-platform-tools.ipc.token": {
             "type": "string",
             "default": "",
-            "description": "Секретный токен для аутентификации клиентов IPC. Рекомендуется задать непустое значение и указать его в переменной окружения ONEC_IPC_TOKEN для MCP-сервера. При пустом значении соединения принимаются без проверки токена (режим разработки)."
+            "description": "Секретный токен TCP-канала. Рекомендуется задать непустое значение и указать его в переменной окружения ONEC_IPC_TOKEN для MCP-сервера. При пустом значении соединения принимаются без проверки токена (режим разработки). Канал окна в VS Code заводит токен на сессию сам."
           }
         }
       },
@@ -4963,7 +4963,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",
     "test": "vscode-test && npm run test:node",
-    "test:node": "node --test out/test/shared/skillMcpNames.node.js out/test/shared/gitHead.node.js out/test/shared/dotEnv.node.js out/test/shared/environments.node.js out/test/shared/codeEnvironmentVariables.node.js out/test/shared/ovmPaths.node.js out/test/shared/processOutput.node.js out/test/shared/processTermination.node.js out/test/shared/ibsrvDataLock.node.js out/test/utils/shellArgvRoundtrip.node.js out/test/shared/executableLookup.node.js out/test/testing/mutatosRun.node.js out/test/testing/mutatosSources.node.js out/test/testing/mutatosReport.node.js out/test/spreadsheet/spreadsheetHtml.node.js out/test/features/odata.node.js out/test/metadata/erTheme.node.js out/test/metadata/jarJavaVersion.node.js out/test/testing/yaxunitReleases.node.js out/test/metadata/erExport.node.js",
+    "test:node": "node --test out/test/shared/skillMcpNames.node.js out/test/shared/gitHead.node.js out/test/shared/dotEnv.node.js out/test/shared/environments.node.js out/test/shared/codeEnvironmentVariables.node.js out/test/shared/ovmPaths.node.js out/test/shared/processOutput.node.js out/test/shared/processTermination.node.js out/test/shared/ibsrvDataLock.node.js out/test/shared/channelLocation.node.js out/test/utils/shellArgvRoundtrip.node.js out/test/shared/executableLookup.node.js out/test/testing/mutatosRun.node.js out/test/testing/mutatosSources.node.js out/test/testing/mutatosReport.node.js out/test/spreadsheet/spreadsheetHtml.node.js out/test/features/odata.node.js out/test/metadata/erTheme.node.js out/test/metadata/jarJavaVersion.node.js out/test/testing/yaxunitReleases.node.js out/test/metadata/erExport.node.js",
     "package": "vsce package",
     "changelog": "git-cliff --config cliff.toml --output CHANGELOG.md",
     "docs:dev": "vitepress dev docs",

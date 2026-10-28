@@ -18,6 +18,7 @@ import { registerCoreCommands } from './registerCoreCommands';
 import { createShowNot1CProjectMessage } from './projectUi';
 import { registerWelcomeFlow } from './registerWelcomeFlow';
 import { registerInfrastructure } from './registerInfrastructure';
+import { createExtensionApi, type PlatformToolsApi } from './extensionApi';
 import { registerProjectsFlow } from './registerProjectsFlow';
 import { registerMetadataFlow } from './registerMetadataFlow';
 import { registerPropertiesFlow } from './registerPropertiesFlow';
@@ -42,8 +43,10 @@ import { hasProjects, initWorkspaceProjects } from '../shared/workspaceProjects'
 
 /**
  * Выполняет полную инициализацию расширения.
+ *
+ * @returns API расширения для других расширений
  */
-export async function bootstrapApp(context: vscode.ExtensionContext): Promise<void> {
+export async function bootstrapApp(context: vscode.ExtensionContext): Promise<PlatformToolsApi> {
 	// До первой загрузки компонентов: иначе первые запросы уйдут анонимными
 	await initGithubToken(context);
 	initTerminalEnv(context.environmentVariableCollection);
@@ -138,7 +141,7 @@ export async function bootstrapApp(context: vscode.ExtensionContext): Promise<vo
 		projectsCommandDisposables,
 		onProjectsConfigChange,
 	} = await registerProjectsRuntime(onArtifactsExcludeChanged);
-	registerInfrastructure(context);
+	const windowChannel = registerInfrastructure(context);
 	runPostOpenProjectWorkflow(context, () => commands.dependencies.installDependencies());
 
 	const { todoFeatureDisposables } = registerTodoFlow(context, isProjectRef);
@@ -160,4 +163,6 @@ export async function bootstrapApp(context: vscode.ExtensionContext): Promise<vo
 		...ibasesFeatureDisposables,
 		...commandDisposables
 	);
+
+	return createExtensionApi(windowChannel);
 }
