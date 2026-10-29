@@ -4946,11 +4946,11 @@
   },
   "overrides": {
     "diff": "^8.0.3",
-    "serialize-javascript": "^7.0.5",
+    "serialize-javascript": "^7.1.4",
     "uuid": "^14.0.0",
     "js-yaml": "^4.3.1",
     "brace-expansion": "^5.0.12",
-    "vite": "^6.4.3"
+    "vite": "^6.4.5"
   },
   "dependencies": {
     "@vscode/debugadapter": "^1.68.0",
