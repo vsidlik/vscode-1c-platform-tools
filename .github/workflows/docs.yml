@@ -1,21 +1,14 @@
 # Сборка сайта документации (VitePress) и публикация на GitHub Pages.
+# Вызывается в конце обычного релиза. Тестовая подпись сайт не обновляет.
 name: Docs
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
-      - 'package.json'
-      - 'package-lock.json'
-  workflow_dispatch:
-  # Раздел MCP приходит из соседнего репозитория: пересборка по его сигналу и раз в сутки
-  repository_dispatch:
-    types: [docs]
-  schedule:
-    - cron: '0 3 * * *'
+  workflow_call:
+    inputs:
+      ref:
+        description: Коммит релиза
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -33,6 +26,8 @@ jobs:
     steps:
       - name: Получить код
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Установить Node.js 20
         uses: actions/setup-node@v7
