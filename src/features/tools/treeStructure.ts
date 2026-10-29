@@ -80,7 +80,6 @@ import {
 	getCreateDeliveryDescriptionFileCommandName,
 	getCreateDistributivePackageCommandName,
 	getCreateDistributionFilesCommandName,
-	getConfigureClaudeCodeMcpCommandName,
 	getConfigureCursorMcpCommandName,
 	getAddDevSkillsCommandName,
 	getAdd1cptSkillsCommandName,
@@ -310,7 +309,6 @@ export const TREE_GROUPS: TreeGroup[] = [
 		defaultCollapsibleState: 'collapsed',
 		commands: [
 			{ command: '1c-platform-tools.mcp.configureCursor', title: getConfigureCursorMcpCommandName().title, treeLabel: '🔌 Настроить MCP для Cursor' },
-			{ command: '1c-platform-tools.mcp.configureClaudeCode', title: getConfigureClaudeCodeMcpCommandName().title, treeLabel: '🔌 Настроить MCP для Claude Code' },
 			{ command: '1c-platform-tools.skills.add1cpt', title: getAdd1cptSkillsCommandName().title, treeLabel: '🤖 Добавить навыки расширения (команды и MCP)' },
 			{ command: '1c-platform-tools.skills.addDevSkills', title: getAddDevSkillsCommandName().title, treeLabel: '📐 Добавить навыки разработки 1С (cc-1c-skills)' },
 			{ command: '1c-platform-tools.skills.addOnescript', title: getAddOnescriptSkillsCommandName().title, treeLabel: '🤖 Добавить навыки OneScript' },

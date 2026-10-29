@@ -23,9 +23,9 @@ import {
 	type WindowRecord,
 } from './windowRegistry';
 import { normalizeProjectRoot } from './workspaceProjects';
-import { onWorkspaceTrustGranted } from './workspaceTrust';
+import { isWorkspaceTrusted, onWorkspaceTrustGranted } from './workspaceTrust';
 
-const log = logger.scope('ipc');
+const log = logger.scope('channel');
 
 /** Пачка изменений папок и проектов даёт одну запись. */
 const PUBLISH_DELAY_MS = 200;
@@ -46,8 +46,8 @@ function errorText(error: unknown): string {
 /**
  * Запись окна в реестре окон.
  *
- * В недоверенной папке канал не открывается, и окна в реестре нет: агент его не
- * найдёт, как не выполнит в нём и команду.
+ * В недоверенной папке канал не открывается. Папка всё равно записана, без
+ * канала: агент из неё не выполняет команды и в других окнах.
  */
 export class WindowRegistration implements vscode.Disposable {
 	/** Идентификатор окна в реестре. */
@@ -123,10 +123,17 @@ export class WindowRegistration implements vscode.Disposable {
 		}
 		try {
 			if (!endpoint) {
+				if (!isWorkspaceTrusted()) {
+					await writeWindowRecord(this.dir, this.record('', '', false));
+					if (this.disposed) {
+						removeWindowRecord(this.dir, this.id);
+					}
+					return false;
+				}
 				removeWindowRecord(this.dir, this.id);
 				return false;
 			}
-			await writeWindowRecord(this.dir, this.record(endpoint.path, endpoint.token));
+			await writeWindowRecord(this.dir, this.record(endpoint.path, endpoint.token, true));
 			if (this.disposed) {
 				// Окно закрылось, пока шла запись
 				removeWindowRecord(this.dir, this.id);
@@ -139,7 +146,7 @@ export class WindowRegistration implements vscode.Disposable {
 		}
 	}
 
-	private record(pipe: string, token: string): WindowRecord {
+	private record(pipe: string, token: string, trusted: boolean): WindowRecord {
 		const currentProject = this.projects.selectedRoot();
 		return {
 			version: WINDOW_RECORD_VERSION,
@@ -150,6 +157,7 @@ export class WindowRegistration implements vscode.Disposable {
 			name: vscode.workspace.name ?? '',
 			pipe,
 			token,
+			trusted,
 			folders: this.projects.folders().map((folder) => normalizeProjectRoot(folder.root)),
 			projects: this.projects.snapshotNow().projects.map((project) => project.root),
 			...(currentProject === undefined ? {} : { currentProject }),

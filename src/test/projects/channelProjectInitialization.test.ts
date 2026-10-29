@@ -1,7 +1,7 @@
 import * as assert from 'node:assert';
 import * as path from 'node:path';
 import { initializeProjectCommand } from '../../features/projects/workspaceProjectCommands';
-import { handleExecuteCommand, type IpcWindow } from '../../shared/ipcServer';
+import { handleExecuteCommand, type ChannelWindow } from '../../shared/channelServer';
 import { hasProjectFile } from '../../shared/projectLayout';
 import { normalizeProjectRoot } from '../../shared/workspaceProjects';
 import { copyFixtures, detectedProjects, resetLayout, type ProjectsFixture } from './workspaceProjectsFixture';
@@ -12,7 +12,7 @@ interface ExecuteResult {
 }
 
 /** Окно канала над проектами фикстуры: команды инициализации выполняются как зарегистрированные. */
-function fixtureWindow(fixture: ProjectsFixture, calls: unknown[][]): IpcWindow {
+function fixtureWindow(fixture: ProjectsFixture, calls: unknown[][]): ChannelWindow {
 	return {
 		projects: fixture.source,
 		executeCommand: async (commandId, ...args) => {

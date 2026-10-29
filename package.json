@@ -27,9 +27,6 @@
       "restrictedConfigurations": [
         "1c-platform-tools.vrunner.path.executable",
         "1c-platform-tools.execution.useTasks",
-        "1c-platform-tools.ipc.enabled",
-        "1c-platform-tools.ipc.port",
-        "1c-platform-tools.ipc.token",
         "1c-platform-tools.components.path.adapter",
         "1c-platform-tools.components.path.metadataJar",
         "1c-platform-tools.components.path.java",
@@ -1648,11 +1645,6 @@
       {
         "command": "1c-platform-tools.mcp.configureCursor",
         "title": "Настроить MCP для Cursor",
-        "category": "1С: Навыки для AI"
-      },
-      {
-        "command": "1c-platform-tools.mcp.configureClaudeCode",
-        "title": "Настроить MCP для Claude Code",
         "category": "1С: Навыки для AI"
       },
       {
@@ -4544,30 +4536,6 @@
         }
       },
       {
-        "title": "Сервер IPC",
-        "id": "1c-platform-tools.ipc",
-        "order": 5,
-        "properties": {
-          "1c-platform-tools.ipc.enabled": {
-            "type": "boolean",
-            "default": false,
-            "description": "Открыть TCP-канал на localhost: по нему внешние программы вызывают команды расширения. MCP-серверу он не нужен."
-          },
-          "1c-platform-tools.ipc.port": {
-            "type": "number",
-            "default": 40241,
-            "minimum": 1,
-            "maximum": 65535,
-            "description": "Порт TCP-канала на localhost."
-          },
-          "1c-platform-tools.ipc.token": {
-            "type": "string",
-            "default": "",
-            "description": "Токен TCP-канала: без него запросы не выполняются. При пустом значении запросы принимаются без проверки токена."
-          }
-        }
-      },
-      {
         "title": "Внешние компоненты",
         "id": "1c-platform-tools.components",
         "order": 6,
@@ -4974,8 +4942,7 @@
     "docs:dev": "vitepress dev docs",
     "docs:sync": "node scripts/sync-docs.mjs",
     "docs:build": "npm run docs:sync && vitepress build docs",
-    "docs:preview": "vitepress preview docs",
-    "ping-ipc": "node ../mcp-1c-platform-tools/scripts/ping-ipc.mjs"
+    "docs:preview": "vitepress preview docs"
   },
   "overrides": {
     "diff": "^8.0.3",

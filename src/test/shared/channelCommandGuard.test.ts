@@ -1,7 +1,7 @@
 import * as assert from 'node:assert';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { handleExecuteCommand } from '../../shared/ipcServer';
+import { handleExecuteCommand } from '../../shared/channelServer';
 
 /** Ответ канала с отказом. */
 function errorOf(response: { error?: { code?: string } }): string | undefined {

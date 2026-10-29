@@ -71,12 +71,6 @@ export interface EnvironmentSummary {
 	edtVersions: string[];
 	/** Путь к 1cedtcli выбранной установки. */
 	edtCliPath?: string;
-	/** IPC включён. */
-	ipcEnabled: boolean;
-	/** Порт IPC. */
-	ipcPort: number;
-	/** Токен IPC задан; само значение в сводку не входит. */
-	ipcTokenSet: boolean;
 }
 
 /**
@@ -120,7 +114,6 @@ export function formatEnvironmentSummary(summary: EnvironmentSummary): string {
 	if (summary.edtCliPath) {
 		lines.push(`- 1cedtcli: ${summary.edtCliPath}`);
 	}
-	lines.push(formatIpcLine(summary));
 	return `${lines.join('\n')}\n`;
 }
 
@@ -172,19 +165,4 @@ export function formatComponentLine(component: EnvironmentComponentInfo): string
 		parts.push('автозагрузка выключена');
 	}
 	return `${component.title}: ${parts.join(', ')}`;
-}
-
-/**
- * Строка про IPC без значения токена.
- *
- * @param summary - Сводка
- * @returns Строка списка
- */
-function formatIpcLine(summary: EnvironmentSummary): string {
-	const parts = [
-		summary.ipcEnabled ? 'включён' : 'выключен',
-		`порт ${summary.ipcPort}`,
-		summary.ipcTokenSet ? 'токен задан' : 'токен не задан',
-	];
-	return `- IPC: ${parts.join(', ')}`;
 }

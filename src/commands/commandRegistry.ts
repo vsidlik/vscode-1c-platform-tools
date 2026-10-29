@@ -139,7 +139,6 @@ export function registerCommands(
 	// Команды навыков для AI
 	const skillsCommands = [
 		registerMcpConfigCommand('1c-platform-tools.mcp.configureCursor', 'mcp-1c-platform-tools.configureCursor'),
-		registerMcpConfigCommand('1c-platform-tools.mcp.configureClaudeCode', 'mcp-1c-platform-tools.configureClaudeCode'),
 		registerProjectCommand('1c-platform-tools.skills.addDevSkills', (destination?: unknown) => {
 			if (isAgentOptions(destination)) {
 				return agentInteractiveError('Передайте назначение строкой: claude, cursor, copilot или путь к папке.');

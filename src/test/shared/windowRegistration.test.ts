@@ -144,7 +144,7 @@ suite('окно в реестре окон для MCP-сервера', () => {
 		}
 	});
 
-	test('в недоверенной папке окна в реестре нет, после доверия оно появляется', async () => {
+	test('в недоверенной папке канала нет, папка записана, после доверия канал появляется', async () => {
 		const root = normalizeProjectRoot(path.join(os.tmpdir(), 'erp'));
 		const projects = fakeProjects([root], [root], root);
 		const channel = labelledChannel('окно');
@@ -152,12 +152,20 @@ suite('окно в реестре окон для MCP-сервера', () => {
 		const registration = new WindowRegistration(channel, projects.source, dir);
 		try {
 			assert.strictEqual(await registration.windowId(), undefined);
-			assert.deepStrictEqual(await readWindowRecords(dir), []);
+			const locked = (await readWindowRecords(dir))[0];
+			assert.ok(locked);
+			assert.strictEqual(locked.trusted, false);
+			assert.strictEqual(locked.pipe, '');
+			assert.strictEqual(locked.token, '');
+			assert.deepStrictEqual(locked.folders, [root]);
 
 			setWorkspaceTrustProbe(() => true);
 			const id = await registration.windowId();
-			assert.ok(id, 'после доверия окно должно записаться');
-			assert.ok(await recordOf(dir, id));
+			assert.ok(id, 'после доверия окно должно открыть канал');
+			const record = await recordOf(dir, id);
+			assert.ok(record);
+			assert.strictEqual(record.trusted, true);
+			assert.notStrictEqual(record.pipe, '');
 		} finally {
 			registration.dispose();
 			channel.dispose();

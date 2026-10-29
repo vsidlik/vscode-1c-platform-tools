@@ -44,6 +44,8 @@ export interface WindowRecord {
 	readonly pipe: string;
 	/** Токен канала окна. */
 	readonly token: string;
+	/** false: папке не доверяют, канала нет, команды агента не выполняются. */
+	readonly trusted: boolean;
 	/** Папки рабочей области. */
 	readonly folders: readonly string[];
 	/** Проекты окна: каталоги с `packagedef`. */
@@ -98,6 +100,7 @@ export function parseWindowRecord(text: string): WindowRecord | undefined {
 		typeof record.name === 'string' &&
 		typeof record.pipe === 'string' &&
 		typeof record.token === 'string' &&
+		typeof record.trusted === 'boolean' &&
 		isStringList(record.folders) &&
 		isStringList(record.projects) &&
 		(record.currentProject === undefined || typeof record.currentProject === 'string') &&

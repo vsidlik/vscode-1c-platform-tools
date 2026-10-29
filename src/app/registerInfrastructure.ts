@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { registerRunCommandFileWatcher } from '../shared/runCommandFromFileWatcher';
-import { startIpcServer } from '../shared/ipcServer';
+import { startChannelServer } from '../shared/channelServer';
 import { WindowRegistration } from '../shared/windowRegistration';
 import { workspaceProjectsSource } from '../features/projects/workspaceProjectsSource';
 import { registerServiceFolderDecoration } from '../features/serviceFiles/serviceFolderDecoration';
@@ -12,7 +12,7 @@ import { registerServiceFolderDecoration } from '../features/serviceFiles/servic
  */
 export function registerInfrastructure(context: vscode.ExtensionContext): WindowRegistration {
 	registerRunCommandFileWatcher(context);
-	const windowRegistration = new WindowRegistration(startIpcServer(context), workspaceProjectsSource());
+	const windowRegistration = new WindowRegistration(startChannelServer(context), workspaceProjectsSource());
 	context.subscriptions.push(windowRegistration);
 	registerServiceFolderDecoration(context);
 	return windowRegistration;

@@ -50,6 +50,9 @@ describe('запись окна', () => {
 		const withoutToken = JSON.parse(FIXTURE_TEXT) as Record<string, unknown>;
 		delete withoutToken.token;
 		assert.equal(parseWindowRecord(JSON.stringify(withoutToken)), undefined);
+		const withoutTrusted = JSON.parse(FIXTURE_TEXT) as Record<string, unknown>;
+		delete withoutTrusted.trusted;
+		assert.equal(parseWindowRecord(JSON.stringify(withoutTrusted)), undefined);
 		assert.equal(parseWindowRecord(JSON.stringify({ ...recordOf('c'), folders: '/home/dev/erp' })), undefined);
 	});
 

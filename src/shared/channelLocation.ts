@@ -20,7 +20,7 @@ import * as path from 'node:path';
 export const SOCKET_PATH_LIMIT = 100;
 
 const SOCKET_DIR_PREFIX = '1cpt-';
-const SOCKET_NAME = 'ipc.sock';
+const SOCKET_NAME = 'channel.sock';
 
 /** Путь канала и каталог Unix-сокета, который удаляется после закрытия. */
 export interface ChannelLocation {

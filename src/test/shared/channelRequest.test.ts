@@ -5,7 +5,7 @@ import {
 	resolveRequestDirectory,
 	resolveRequestRoot,
 	type RequestRootContext,
-} from '../../shared/ipcRequest';
+} from '../../shared/channelRequest';
 import { normalizeProjectRoot } from '../../shared/workspaceProjects';
 
 /** Путь в стиле текущей файловой системы. */

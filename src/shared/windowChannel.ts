@@ -20,7 +20,7 @@ import {
 import { logger } from './logger';
 import { isWorkspaceTrusted } from './workspaceTrust';
 
-const log = logger.scope('ipc');
+const log = logger.scope('channel');
 
 /** Адрес канала окна. */
 export interface WindowChannelEndpoint {
