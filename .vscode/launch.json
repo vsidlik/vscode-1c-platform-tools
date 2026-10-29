@@ -1,6 +1,6 @@
 // Конфигурации отладки расширения
 // https://go.microsoft.com/fwlink/?linkid=830387
-// Составная «Расширение + MCP» работает при открытом workspace с обоими репо (vscode-1c-platform-tools и mcp-1c-platform-tools).
+// «Расширение + MCP» работает при открытом workspace с обоими репо (vscode-1c-platform-tools и mcp-1c-platform-tools).
 {
 	"version": "0.2.0",
 	"configurations": [
@@ -17,29 +17,18 @@
 			"preLaunchTask": "Скомпилировать TypeScript"
 		},
 		{
-			"name": "Run Extension (без расширений)",
+			"name": "Run Extension + MCP",
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}",
-				"--user-data-dir=${workspaceFolder}/.vscode-ext-dev",
-				"--extensions-dir=${workspaceFolder}/.vscode-ext-dev/extensions"
+				"--extensionDevelopmentPath=${workspaceFolder:mcp-1c-platform-tools}"
 			],
 			"outFiles": [
-				"${workspaceFolder}/out/**/*.js"
+				"${workspaceFolder}/out/**/*.js",
+				"${workspaceFolder:mcp-1c-platform-tools}/out/**/*.js"
 			],
 			"preLaunchTask": "Скомпилировать TypeScript"
-		}
-	],
-	"compounds": [
-		{
-			// Расширение — из исходников в Extension Development Host; MCP-сервер
-			// запускает агентский клиент из mcp.json открытого проекта
-			// (node --inspect=9229 .../out/src/index.js), а конфигурация attach
-			// собирает свежий out и подключается к нему по порту 9229.
-			"name": "Расширение + MCP (одновременно)",
-			"configurations": ["Run Extension", "MCP: подключиться к процессу (port 9229)"],
-			"stopAll": true
 		}
 	]
 }

@@ -358,7 +358,7 @@ suite('резидентный процесс md-sparrow', function () {
 		const h = harness('silent', { timing: { readyTimeoutMs: 300, drainMs: 10_000 } });
 
 		const queued = h.read('echo', 'раз');
-		await waitFor(() => h.starts().length === 1);
+		await waitFor(() => h.launches.length === 1);
 		const startedAt = Date.now();
 		await h.pool.stopAll('drain');
 

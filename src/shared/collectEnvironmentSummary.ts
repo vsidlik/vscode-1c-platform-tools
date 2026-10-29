@@ -65,9 +65,6 @@ export async function collectEnvironmentSummary(
 		racPath: rac.binary,
 		edtVersions: edt.installations.map((installation) => installation.version),
 		edtCliPath: edtSelected?.cli,
-		ipcEnabled: config.get<boolean>('ipc.enabled', false),
-		ipcPort: readIpcPort(config),
-		ipcTokenSet: (config.get<string>('ipc.token') ?? '').trim() !== '',
 	};
 }
 
@@ -92,17 +89,6 @@ function readExtensionVersion(extensionId: string): string | undefined {
 function fallbackExtensionVersion(context: vscode.ExtensionContext): string {
 	const version = (context.extension.packageJSON as { version?: string }).version?.trim();
 	return version === undefined || version === '' ? 'не найдена' : version;
-}
-
-/**
- * Порт IPC с тем же умолчанием, что у сервера.
- *
- * @param config - Настройки расширения
- * @returns Порт
- */
-function readIpcPort(config: vscode.WorkspaceConfiguration): number {
-	const port = config.get<number>('ipc.port', 40241);
-	return Number.isFinite(port) ? port : 40241;
 }
 
 /**

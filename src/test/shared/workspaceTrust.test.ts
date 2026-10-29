@@ -1,12 +1,11 @@
 import * as assert from 'node:assert';
 import * as fs from 'node:fs';
-import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { runCancellableCommand } from '../../shared/cancellableProcess';
 import { runHookPhaseDry } from '../../shared/commandHooks';
-import { handleExecuteCommand, openIpcChannel } from '../../shared/ipcServer';
+import { handleExecuteCommand } from '../../shared/channelServer';
 import { runCommandFromFile } from '../../shared/runCommandFromFileWatcher';
 import { VRunnerManager } from '../../shared/vrunnerManager';
 import { testingVRunner } from '../fixtures/helpers/testingVRunner';
@@ -49,62 +48,6 @@ function markerCommand(marker: string): string {
 
 function tempDir(prefix: string): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-/** Свободный порт: слушатель канала поднимается на нём и проверяется подключением. */
-function freePort(): Promise<number> {
-	return new Promise((resolve, reject) => {
-		const probe = net.createServer();
-		probe.once('error', reject);
-		probe.listen(0, '127.0.0.1', () => {
-			const address = probe.address();
-			const port = typeof address === 'object' && address !== null ? address.port : 0;
-			probe.close(() => resolve(port));
-		});
-	});
-}
-
-/**
- * Проверяет, отвечает ли кто-нибудь на порту канала.
- *
- * @param port - Порт подключения
- * @returns true, если соединение установилось
- */
-function channelAccepts(port: number): Promise<boolean> {
-	return new Promise((resolve) => {
-		const socket = net.connect({ port, host: '127.0.0.1' });
-		const done = (accepted: boolean): void => {
-			socket.destroy();
-			resolve(accepted);
-		};
-		socket.setTimeout(2000);
-		socket.once('connect', () => done(true));
-		socket.once('timeout', () => done(false));
-		socket.once('error', () => done(false));
-	});
-}
-
-/**
- * Ждёт, пока порт канала начнёт принимать соединения.
- *
- * Слушатель поднимается не мгновенно, поэтому подключение повторяется до срока:
- * отказ подтверждается только тем, что ни одна попытка не прошла.
- *
- * @param port - Порт подключения
- * @param timeoutMs - Сколько ждать
- * @returns true, если хотя бы одно подключение установилось
- */
-async function channelAcceptsWithin(port: number, timeoutMs: number): Promise<boolean> {
-	const deadline = Date.now() + timeoutMs;
-	for (;;) {
-		if (await channelAccepts(port)) {
-			return true;
-		}
-		if (Date.now() >= deadline) {
-			return false;
-		}
-		await new Promise((resolve) => setTimeout(resolve, 50));
-	}
 }
 
 suite('недоверенная папка: процессы не запускаются', () => {
@@ -396,35 +339,6 @@ suite('недоверенная папка: канал и файл-тригге�
 		assert.strictEqual(response.error?.message, WORKSPACE_TRUST_REQUIRED);
 	});
 
-	test('канал не слушает порт, пока папке не доверяют', async function () {
-		this.timeout(30_000);
-		const config = { enabled: true, host: '127.0.0.1', port: await freePort(), token: null };
-		let channel: net.Server | null = null;
-		try {
-			distrustWorkspace();
-			channel = openIpcChannel(config, 'yellow-hammer.1c-platform-tools');
-
-			assert.strictEqual(channel, null, 'канал не должен открываться');
-			assert.strictEqual(
-				await channelAcceptsWithin(config.port, 1000),
-				false,
-				'порт канала не должен принимать соединения'
-			);
-
-			setWorkspaceTrustProbe(() => true);
-			channel = openIpcChannel(config, 'yellow-hammer.1c-platform-tools');
-
-			assert.ok(channel, 'после доверия канал должен открыться');
-			assert.strictEqual(
-				await channelAcceptsWithin(config.port, 10_000),
-				true,
-				'после доверия канал должен слушать порт'
-			);
-		} finally {
-			channel?.close();
-		}
-	});
-
 	test('файл-триггер не выполняет команду и остаётся на месте', async () => {
 		const dir = tempDir('trust-trigger-');
 		const file = path.join(dir, '1c-platform-tools-run-command');
@@ -604,9 +518,10 @@ suite('настройки, которые задают программу или
 		assert.deepStrictEqual(stale, []);
 	});
 
-	test('канал и выбор способа запуска берутся не из папки', () => {
-		for (const key of ['ipc.enabled', 'ipc.port', 'ipc.token', 'execution.useTasks']) {
-			assert.ok(restricted.includes(`${SECTION}${key}`), `${key} должна быть в restrictedConfigurations`);
-		}
+	test('выбор способа запуска берётся не из папки', () => {
+		assert.ok(
+			restricted.includes(`${SECTION}execution.useTasks`),
+			'execution.useTasks должна быть в restrictedConfigurations'
+		);
 	});
 });

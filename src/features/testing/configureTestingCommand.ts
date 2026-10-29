@@ -119,7 +119,7 @@ export function registerConfigureTestingCommand(vrunner: VRunnerManager): vscode
 			}
 		];
 
-		// объект опций — агентный вызов (MCP/IPC передаёт его всегда); визард в
+		// объект опций — агентный вызов (MCP передаёт его всегда); визард в
 		// этом контексте открывать нельзя: пользователь может быть не за экраном
 		let selectedKeys: Set<string>;
 		const nonInteractive = Array.isArray(opts?.frameworks);

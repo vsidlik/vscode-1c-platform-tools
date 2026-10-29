@@ -1,10 +1,9 @@
 /**
- * Типы для синхронного выполнения команд расширения через IPC (wait: true).
+ * Типы для синхронного выполнения команд расширения через канал окна (wait: true).
  */
 
 /**
  * Флаги, которые MCP-сервер передаёт первым элементом args при вызове executeCommand.
- * Совместимы с IpcCommandFlags на стороне ipcServer.
  */
 export interface CommandExecutionOptions {
 	/** При true — команда выполняется синхронно и возвращает StructuredCommandResult. */
@@ -114,7 +113,7 @@ export interface TestRunStats {
 
 /**
  * Результат синхронного выполнения команды.
- * Возвращается командой при wait: true; ipcServer оборачивает в commandResult.
+ * Возвращается командой при wait: true; channelServer оборачивает в commandResult.
  */
 export interface StructuredCommandResult {
 	/** Признак успешного завершения (exitCode === 0). */

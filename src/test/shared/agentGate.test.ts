@@ -11,7 +11,7 @@ class RootNode extends vscode.TreeItem {
 suite('agentGate: агентный вызов или элемент дерева', () => {
 	const treeItem = new PlatformTreeItem('Команда', TreeItemType.Task, vscode.TreeItemCollapsibleState.None);
 
-	test('опции MCP/IPC распознаются, в том числе пустые и пришедшие через JSON', () => {
+	test('опции MCP распознаются, в том числе пустые и пришедшие через JSON', () => {
 		assert.strictEqual(isAgentOptions({ wait: true, projectPath: 'C:/projects/app' }), true);
 		assert.strictEqual(isAgentOptions({}), true);
 		assert.strictEqual(isAgentOptions(JSON.parse('{"command":"x"}')), true);

@@ -8,6 +8,4 @@
 
 **Запуск по файлу.** Если агент умеет создавать файлы, он может записать в `.cursor/1c-platform-tools-run-command` одну строку — идентификатор команды (например `1c-platform-tools.run.designer`). Расширение выполнит команду и удалит файл.
 
-**MCP.** Для вызова команд через Model Context Protocol установите расширение [1C: Platform Tools MCP](https://marketplace.visualstudio.com/items?itemName=yellow-hammer.mcp-1c-platform-tools). В VS Code больше ничего не нужно. В Cursor выполните команду [Настроить MCP для Cursor](command:1c-platform-tools.mcp.configureCursor) из группы «Навыки для AI»: она пропишет сервер в `.cursor/mcp.json` проекта и включит канал связи. После настройки перезагрузите окно.
-
-Порт и токен канала задаются в настройках: [открыть настройки](command:1c-platform-tools.tools.openSettings). Что писать агенту и какие параметры принимают инструменты — в разделе [MCP-сервер](https://yellow-hammer.github.io/vscode-1c-platform-tools/mcp/).
+**MCP.** Установите расширение [1C: Platform Tools MCP](https://marketplace.visualstudio.com/items?itemName=yellow-hammer.mcp-1c-platform-tools). Как подключить его в VS Code и Cursor — в разделе [MCP-сервер](https://yellow-hammer.github.io/vscode-1c-platform-tools/mcp/).

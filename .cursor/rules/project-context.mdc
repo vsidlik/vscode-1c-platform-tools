@@ -23,7 +23,7 @@ alwaysApply: true
 - **DAP и отладка 1С**: интеграция с внешним `onec-debug-adapter`, регистрация через `src/features/debug/registerDebugFeature.ts`, детали — `.cursor/rules/debug-adapter-and-dap.mdc`
 - **Структура проекта 1С**: `src/shared/projectStructure.ts` (`PROJECT_STRUCTURE`, шаблон vanessa-bootstrap)
 - **Контекст после создания проекта**: `src/shared/projectContext.ts` (`setOnProjectCreated`, `notifyProjectCreated`)
-- **IPC и file-watcher**: `src/shared/ipcServer.ts` и `src/shared/runCommandFromFileWatcher.ts`, подключаются через `src/app/registerInfrastructure.ts`
+- **Канал окна и file-watcher**: `src/shared/channelServer.ts` (сервер канала окна для MCP-сервера), канал окна `src/shared/windowChannel.ts`, запись окна в реестре окон `src/shared/windowRegistration.ts` и `src/shared/windowRegistry.ts` (формат записи общий с mcp-1c-platform-tools), окно провайдеру MCP-сервера VS Code отдаёт API из `src/app/extensionApi.ts`; `src/shared/runCommandFromFileWatcher.ts`; подключаются через `src/app/registerInfrastructure.ts`
 - **Навыки для AI**: `src/commands/skillsCommands.ts` (установка SKILL.md из cc-1c-skills и `resources/skills`)
 - **Логирование**: `src/shared/logger.ts`
 
@@ -36,7 +36,6 @@ alwaysApply: true
 
 Настройки разбиты на подпункты по смыслу:
 
-- **Сервер IPC**: контекст — walkthrough «Интеграция с AI и MCP»; фильтр — `@ext:yellow-hammer.1c-platform-tools 1c-platform-tools.ipc`; команда — `1c-platform-tools.settings.openIpc`
 - **Инструменты**: контекст — дерево, кнопка «Настройки» в панели инструментов; фильтр — `@ext:yellow-hammer.1c-platform-tools` (все настройки); команда — `1c-platform-tools.settings.openTools`
 - **Проекты**: контекст — панель «Проекты 1С», walkthrough; фильтр — `@ext:yellow-hammer.1c-platform-tools 1c-platform-tools.projects`; команда — `1c-platform-tools.projects.openSettings`
 - **Список дел**: контекст — панель «Список дел»; фильтр — `@ext:yellow-hammer.1c-platform-tools 1c-platform-tools.todo`; команда — `1c-platform-tools.settings.openTodo`
@@ -46,7 +45,7 @@ alwaysApply: true
 Правила для новых панелей и настроек:
 
 1. **Кнопка «Настройки»** — открывает настройки, релевантные контексту: из панели «Инструменты 1С» → `settings.openTools` (все общие настройки расширения); из панели «Проекты 1С» → `projects.openSettings` (группа «Проекты»); из панели «Список дел» → `settings.openTodo` (группа «Список дел»); из панели «Метаданные 1С» → `settings.openMetadata` (группа «Метаданные 1С», md-sparrow). Команда `settings` показывает QuickPick с разделами, включая метаданные.
-2. **Главная команда `1c-platform-tools.settings`** — показывает QuickPick с выбором раздела: Сервер IPC | Проекты | Инструменты | Артефакты | Список дел | Метаданные 1С | Общее.
+2. **Главная команда `1c-platform-tools.settings`** — показывает QuickPick с выбором раздела: Проекты | Инструменты | Артефакты | Список дел | Метаданные 1С | Общее.
 3. Всегда добавлять фильтр по расширению `@ext:yellow-hammer.1c-platform-tools` при открытии настроек, чтобы отображались только параметры нашего расширения.
 
 ## Панели «Помощь и поддержка»
@@ -84,6 +83,6 @@ alwaysApply: true
 - Коммиты: [Conventional Commits](https://www.conventionalcommits.org/ru/v1.0.0/), сообщения на русском; формулировка — `CONTRIBUTING.md` (прошедшее, множественное число)
 - Комментарии и сообщения пользователю: на русском
 - Типы: из `@types/vscode`, избегать `any`
-- Логирование: модуль `src/shared/logger.ts` поверх `LogOutputChannel`, не использовать `console.log`/`console.error` в продакшн-коде. Каждый модуль получает свой логгер через `logger.scope('компонент')` (скоупы: `app`, `dap`, `md-sparrow`, `metadata`, `er`, `ipc`, `vrunner`, `commands`, `tasks`, `releases` и др.); в текст добавляется только префикс компонента — `[компонент] сообщение`, таймстемп и уровень проставляет VS Code. Вывод — Output → «1C: Platform Tools»; уровень и фильтрацию задаёт сам VS Code (селектор уровня у канала / «Developer: Set Log Level…»); при `Debug` DAP-адаптер шлёт трассировку (`[dap]`). Уровни по смыслу: пользовательские события — `info`, диагностика — `debug`, проблема без потери функции — `warn`, отказ — `error`.
+- Логирование: модуль `src/shared/logger.ts` поверх `LogOutputChannel`, не использовать `console.log`/`console.error` в продакшн-коде. Каждый модуль получает свой логгер через `logger.scope('компонент')` (скоупы: `app`, `dap`, `md-sparrow`, `metadata`, `er`, `channel`, `vrunner`, `commands`, `tasks`, `releases` и др.); в текст добавляется только префикс компонента — `[компонент] сообщение`, таймстемп и уровень проставляет VS Code. Вывод — Output → «1C: Platform Tools»; уровень и фильтрацию задаёт сам VS Code (селектор уровня у канала / «Developer: Set Log Level…»); при `Debug` DAP-адаптер шлёт трассировку (`[dap]`). Уровни по смыслу: пользовательские события — `info`, диагностика — `debug`, проблема без потери функции — `warn`, отказ — `error`.
 - **Эволюция без самодельной совместимости**: не добавлять fallback на старые ключи настроек, дублирующие пути чтения конфигурации, legacy-команды и т.п. без **явного** запроса пользователя. Пока фича в разработке — меняем контракт и документацию прямо. Подробнее: `.cursor/rules/evolution-no-legacy.mdc`.
 - **Тексты в UI расширения** (`package.json`: `description` у настроек и команд, `title` там, где видит пользователь; а также `showErrorMessage` / тексты ошибок, которые видны в панелях и деревьях): писать **только** то, что помогает пользователю исправить ситуацию или понять эффект. **Не** вставлять внутренние пометки («переменные не раскрываются», «расширение не …»). Такие детали — в `docs/` или в лог (`logger`), не в сообщениях пользователю. Краткие человеческие формулировки вопросов и кнопок — **`.cursor/rules/ui-messages.mdc`**.

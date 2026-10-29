@@ -585,7 +585,7 @@ export function registerLaunchFeature(
 			if (typeof profileId === 'string' && profileId.trim() !== '') {
 				return selectProfileById(vrunner, refresh, profileId);
 			}
-			// объект опций (MCP/IPC): имя профиля в поле profile; без него меню не открываем
+			// объект опций (MCP): имя профиля в поле profile; без него меню не открываем
 			if (isAgentOptions(profileId)) {
 				const requested = (profileId as { profile?: unknown }).profile;
 				if (typeof requested === 'string' && requested.trim() !== '') {

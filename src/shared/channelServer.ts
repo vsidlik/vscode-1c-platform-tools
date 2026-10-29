@@ -13,29 +13,30 @@ import {
 } from './mcpCommandPolicy';
 import { agentCommandDescription } from './agentCommandDescriptions';
 import { readManifestCommands } from './commandCatalog';
-import { extractCommandFlags, resolveRequestDirectory, resolveRequestRoot } from './ipcRequest';
+import { extractCommandFlags, resolveRequestDirectory, resolveRequestRoot } from './channelRequest';
 import { hasProjectFile } from './projectLayout';
 import { normalizeProjectRoot, runWithProject } from './workspaceProjects';
-import { isWorkspaceTrusted, onWorkspaceTrustGranted, WORKSPACE_TRUST_REQUIRED } from './workspaceTrust';
+import { isWorkspaceTrusted, WORKSPACE_TRUST_REQUIRED } from './workspaceTrust';
+import { WindowChannel } from './windowChannel';
 import { initializeChoices } from '../features/projects/projectInitialization';
 import { workspaceProjectsSource, type WorkspaceProjectsSource } from '../features/projects/workspaceProjectsSource';
 
-const log = logger.scope('ipc');
+const log = logger.scope('channel');
 
-export interface IpcRequest {
+export interface ChannelRequest {
 	id: unknown;
 	method: unknown;
 	params?: unknown;
 	token?: unknown;
 }
 
-export interface IpcExecuteCommandParams {
+export interface ChannelExecuteParams {
 	commandId?: unknown;
 	args?: unknown;
 	projectPath?: unknown;
 }
 
-interface IpcResponse {
+interface ChannelResponse {
 	id: string | null;
 	result?: unknown;
 	error?: {
@@ -45,16 +46,9 @@ interface IpcResponse {
 	};
 }
 
-export interface IpcServerConfig {
-	enabled: boolean;
-	host: string;
-	port: number;
-	token: string | null;
-}
-
 /**
  * Расширенный StructuredCommandResult с метаданными выполнения, которые
- * добавляет ipcServer (длительность, временные метки, корень проекта).
+ * добавляет channelServer (длительность, временные метки, корень проекта).
  */
 interface StructuredCommandResultWithTiming extends StructuredCommandResult {
 	startedAt: string;
@@ -66,30 +60,16 @@ interface StructuredCommandResultWithTiming extends StructuredCommandResult {
 	data?: unknown;
 }
 
-function readConfig(): IpcServerConfig {
-	const config = vscode.workspace.getConfiguration('1c-platform-tools');
-	const enabled = config.get<boolean>('ipc.enabled', false);
-	const port = config.get<number>('ipc.port', 40241);
-	const token = config.get<string>('ipc.token') ?? '';
-
-	return {
-		enabled,
-		host: '127.0.0.1',
-		port: Number.isFinite(port) ? port : 40241,
-		token: token === '' ? null : token,
-	};
-}
-
-function buildResponseBase(id: unknown): Pick<IpcResponse, 'id'> {
+function buildResponseBase(id: unknown): Pick<ChannelResponse, 'id'> {
 	return {
 		id: typeof id === 'string' || typeof id === 'number' ? String(id) : null,
 	};
 }
 
 async function handlePing(
-	request: IpcRequest,
+	request: ChannelRequest,
 	extensionId: string
-): Promise<IpcResponse> {
+): Promise<ChannelResponse> {
 	const base = buildResponseBase(request.id);
 	const extension = vscode.extensions.getExtension(extensionId);
 
@@ -104,12 +84,12 @@ async function handlePing(
 }
 
 /** Окно, в котором канал выполняет команды. */
-export interface IpcWindow {
+export interface ChannelWindow {
 	readonly projects: WorkspaceProjectsSource;
 	executeCommand(commandId: string, ...args: unknown[]): Thenable<unknown>;
 }
 
-function extensionWindow(): IpcWindow {
+function extensionWindow(): ChannelWindow {
 	return {
 		projects: workspaceProjectsSource(),
 		executeCommand: (commandId, ...args) => vscode.commands.executeCommand(commandId, ...args),
@@ -125,10 +105,10 @@ function extensionWindow(): IpcWindow {
  * @returns Корень (undefined у команд окна) либо ошибка ответа
  */
 async function resolveCommandRoot(
-	window: IpcWindow,
+	window: ChannelWindow,
 	commandId: string,
 	projectPath: string | undefined
-): Promise<{ root: string | undefined } | { error: NonNullable<IpcResponse['error']> }> {
+): Promise<{ root: string | undefined } | { error: NonNullable<ChannelResponse['error']> }> {
 	if (!commandRunsInProject(commandId)) {
 		return { root: undefined };
 	}
@@ -157,7 +137,7 @@ async function resolveCommandRoot(
 	if (resolved.error === 'WORKSPACE_MISMATCH') {
 		return {
 			error: {
-				message: 'Путь projectPath лежит вне папок рабочей области VS Code',
+				message: 'Путь projectPath лежит вне папок рабочей области этого окна',
 				code: 'WORKSPACE_MISMATCH',
 				details: { projectPath: resolved.projectPath, workspaceRoots: folders, projects },
 			},
@@ -181,20 +161,20 @@ async function resolveCommandRoot(
  * Если команда возвращает undefined (не реализовала sync-режим), возвращает понятное
  * сообщение агенту вместо тихого «Выполнено.».
  *
- * @param request — исходный IPC-запрос
+ * @param request — исходный запрос канала
  * @param window — окно канала
  * @param commandId — идентификатор команды
  * @param root — корень проекта вызова; undefined у команд окна
  * @param flags — флаги выполнения (wait, settingsFile, ibConnection и прочие)
- * @returns IPC-ответ со структурированным commandResult
+ * @returns ответ канала со структурированным commandResult
  */
 async function handleExecuteCommandSync(
-	request: IpcRequest,
-	window: IpcWindow,
+	request: ChannelRequest,
+	window: ChannelWindow,
 	commandId: string,
 	root: string | undefined,
 	flags: CommandExecutionOptions
-): Promise<IpcResponse> {
+): Promise<ChannelResponse> {
 	const base = buildResponseBase(request.id);
 	const startedAt = new Date().toISOString();
 	const startMs = Date.now();
@@ -276,10 +256,10 @@ async function handleExecuteCommandSync(
  * @returns Ответ канала: результат команды либо отказ
  */
 export async function handleExecuteCommand(
-	request: IpcRequest,
-	params: IpcExecuteCommandParams,
-	window: IpcWindow = extensionWindow()
-): Promise<IpcResponse> {
+	request: ChannelRequest,
+	params: ChannelExecuteParams,
+	window: ChannelWindow = extensionWindow()
+): Promise<ChannelResponse> {
 	const base = buildResponseBase(request.id);
 
 	// Канал в недоверенной папке не поднимается; проверка остаётся на случай,
@@ -381,7 +361,7 @@ interface CommandDescriptor {
 	supportsWait: boolean;
 }
 
-async function handleListCommands(request: IpcRequest): Promise<IpcResponse> {
+async function handleListCommands(request: ChannelRequest): Promise<ChannelResponse> {
 	const base = buildResponseBase(request.id);
 	const all = await vscode.commands.getCommands();
 	const commands = all.filter(isCommandExposedToMcp);
@@ -395,14 +375,13 @@ async function handleListCommands(request: IpcRequest): Promise<IpcResponse> {
 		supportsWait: commandSupportsWait(id),
 	}));
 
-	// commands оставлен для MCP-серверов прошлых версий: они читают только его
 	return {
 		...base,
-		result: { commands, descriptors },
+		result: { descriptors },
 	};
 }
 
-function createResponseForError(id: unknown, error: unknown): IpcResponse {
+function createResponseForError(id: unknown, error: unknown): ChannelResponse {
 	const base = buildResponseBase(id);
 	if (error instanceof Error) {
 		return {
@@ -416,18 +395,25 @@ function createResponseForError(id: unknown, error: unknown): IpcResponse {
 	return {
 		...base,
 		error: {
-			message: 'Внутренняя ошибка IPC-сервера',
+			message: 'Внутренняя ошибка канала окна',
 		},
 	};
 }
 
-function createServer(config: IpcServerConfig, extensionId: string): net.Server {
+/**
+ * Сервер канала окна: разбирает запросы и выполняет их.
+ *
+ * @param token - Токен, без которого запрос не выполняется
+ * @param extensionId - Идентификатор расширения для ответа ping
+ * @returns Сервер, который ещё не слушает
+ */
+function createServer(token: string, extensionId: string): net.Server {
 	return net.createServer((socket) => {
 		log.debug('новое соединение');
 
 		let buffer = '';
 
-		const writeResponse = (response: IpcResponse): void => {
+		const writeResponse = (response: ChannelResponse): void => {
 			try {
 				const payload = `${JSON.stringify(response)}\n`;
 				socket.write(payload);
@@ -451,9 +437,9 @@ function createServer(config: IpcServerConfig, extensionId: string): net.Server 
 				buffer = buffer.slice(index + 1);
 
 				if (line !== '') {
-					let request: IpcRequest;
+					let request: ChannelRequest;
 					try {
-						request = JSON.parse(line) as IpcRequest;
+						request = JSON.parse(line) as ChannelRequest;
 					} catch {
 						writeResponse({
 							...buildResponseBase(null),
@@ -468,30 +454,28 @@ function createServer(config: IpcServerConfig, extensionId: string): net.Server 
 					void (async () => {
 						const method = request.method;
 
-						if (config.token) {
-							if (typeof request.token !== 'string') {
-								writeResponse({
-									...buildResponseBase(request.id),
-									error: {
-										message: 'Отсутствует токен аутентификации',
-										code: 'UNAUTHORIZED',
-									},
-								});
-								return;
-							}
+						if (typeof request.token !== 'string') {
+							writeResponse({
+								...buildResponseBase(request.id),
+								error: {
+									message: 'Отсутствует токен аутентификации',
+									code: 'UNAUTHORIZED',
+								},
+							});
+							return;
+						}
 
-							const expected = Buffer.from(config.token, 'utf8');
-							const actual = Buffer.from(request.token, 'utf8');
-							if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
-								writeResponse({
-									...buildResponseBase(request.id),
-									error: {
-										message: 'Неверный токен аутентификации',
-										code: 'UNAUTHORIZED',
-									},
-								});
-								return;
-							}
+						const expected = Buffer.from(token, 'utf8');
+						const actual = Buffer.from(request.token, 'utf8');
+						if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+							writeResponse({
+								...buildResponseBase(request.id),
+								error: {
+									message: 'Неверный токен аутентификации',
+									code: 'UNAUTHORIZED',
+								},
+							});
+							return;
 						}
 
 						try {
@@ -501,7 +485,7 @@ function createServer(config: IpcServerConfig, extensionId: string): net.Server 
 							} else if (method === 'executeCommand') {
 								const response = await handleExecuteCommand(
 									request,
-									(request.params ?? {}) as IpcExecuteCommandParams
+									(request.params ?? {}) as ChannelExecuteParams
 								);
 								writeResponse(response);
 							} else if (method === 'listCommands') {
@@ -539,87 +523,15 @@ function createServer(config: IpcServerConfig, extensionId: string): net.Server 
 	});
 }
 
-function listenServer(server: net.Server, config: IpcServerConfig): void {
-	server.on('error', (error: unknown) => {
-		if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-			const message = `Не удалось запустить IPC-сервер: порт ${
-				config.port
-			} уже используется. Измените настройку 1c-platform-tools.ipc.port.`;
-			log.error(message);
-			void vscode.window.showErrorMessage(message);
-			return;
-		}
-
-		const message =
-			error instanceof Error ? error.message : 'Неизвестная ошибка IPC-сервера';
-		log.error(`ошибка сервера: ${message}`);
-	});
-
-	server.listen(config.port, config.host, () => {
-		log.info(`сервер запущен на ${config.host}:${config.port}`);
-		if (config.token === null) {
-			log.warn('токен не задан: команды примет любой процесс этой машины, задайте 1c-platform-tools.ipc.token');
-		}
-	});
-}
-
 /**
- * Открывает канал по готовым настройкам.
+ * Заводит канал окна для MCP-сервера.
  *
- * Единственное место, где канал начинает слушать порт: проверка доверия стоит
- * здесь, а не у подписок, поэтому другой вызов её не обойдёт. Канал исполняет
- * команды расширения, и в недоверенной папке он не открывается: иначе настройка
- * проекта решала бы это за пользователя.
- *
- * @param config - Настройки канала
- * @param extensionId - Идентификатор расширения для ответа ping
- * @returns Слушающий сервер либо null, если канал не открыт
+ * @param context - Контекст расширения
+ * @returns Канал окна; открывается при первом запросе адреса
  */
-export function openIpcChannel(config: IpcServerConfig, extensionId: string): net.Server | null {
-	if (!isWorkspaceTrusted()) {
-		log.info('папка не доверенная, канал не открыт');
-		return null;
-	}
-	if (!config.enabled) {
-		log.debug('сервер отключен настройкой 1c-platform-tools.ipc.enabled');
-		return null;
-	}
-	const server = createServer(config, extensionId);
-	listenServer(server, config);
-	return server;
-}
-
-export function startIpcServer(context: vscode.ExtensionContext): void {
+export function startChannelServer(context: vscode.ExtensionContext): WindowChannel {
 	const extensionId = 'yellow-hammer.1c-platform-tools';
-	let config = readConfig();
-	let activeServer: net.Server | null = null;
-
-	const start = (): void => {
-		activeServer = openIpcChannel(config, extensionId);
-	};
-
-	const stop = (): void => {
-		if (activeServer) {
-			activeServer.close();
-			activeServer = null;
-		}
-	};
-
-	start();
-
-	context.subscriptions.push(
-		vscode.workspace.onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration('1c-platform-tools.ipc')) {
-				stop();
-				config = readConfig();
-				start();
-			}
-		}),
-		onWorkspaceTrustGranted(() => {
-			stop();
-			config = readConfig();
-			start();
-		}),
-		{ dispose: stop },
-	);
+	const windowChannel = new WindowChannel((token) => createServer(token, extensionId));
+	context.subscriptions.push(windowChannel);
+	return windowChannel;
 }

@@ -37,9 +37,6 @@ function sampleSummary(overrides: Partial<EnvironmentSummary> = {}): Environment
 		racPath: 'C:/Program Files/1cv8/8.3.27.1936/bin/rac.exe',
 		edtVersions: ['2026.1'],
 		edtCliPath: 'C:/1C/1cedtstart/installations/1C_EDT 2026.1/1cedt/1cedtcli.exe',
-		ipcEnabled: true,
-		ipcPort: 40241,
-		ipcTokenSet: true,
 		...overrides,
 	};
 }
@@ -56,7 +53,7 @@ suite('сводка окружения', () => {
 		);
 	});
 
-	test('сводка содержит обязательные поля и не содержит значение токена', () => {
+	test('сводка содержит обязательные поля', () => {
 		const text = formatEnvironmentSummary(sampleSummary());
 		assert.match(text, /^## Окружение\n/);
 		assert.match(text, /- ОС: Windows_NT 10\.0\.26200 \(x64\)/);
@@ -71,7 +68,6 @@ suite('сводка окружения', () => {
 		);
 		assert.ok(text.includes('- 1cestart: C:/Program Files/1cv8/common/1cestart.exe\n'));
 		assert.match(text, /- rac: C:\/Program Files\/1cv8\/8\.3\.27\.1936\/bin\/rac\.exe/);
-		assert.match(text, /- IPC: включён, порт 40241, токен задан/);
 		assert.doesNotMatch(text, /неизвестно/);
 		assert.doesNotMatch(text, /secret|password|пароль/i);
 	});
@@ -86,8 +82,6 @@ suite('сводка окружения', () => {
 				platformInstallations: [],
 				cestartPath: undefined,
 				racPath: undefined,
-				ipcEnabled: false,
-				ipcTokenSet: false,
 				workspaceTrusted: false,
 				remoteName: 'ssh-remote',
 			})
@@ -99,7 +93,6 @@ suite('сводка окружения', () => {
 		assert.match(text, /- Платформа 1С: не найдена/);
 		assert.match(text, /- 1cestart: не найден/);
 		assert.match(text, /- rac: не найден/);
-		assert.match(text, /- IPC: выключен, порт 40241, токен не задан/);
 		assert.match(text, /- Удалённый режим: ssh-remote/);
 		assert.match(text, /- Рабочая область: ограниченная/);
 	});

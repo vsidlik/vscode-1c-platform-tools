@@ -229,7 +229,7 @@ export function registerEnvironmentCommands(vrunner: VRunnerManager, refresh: ()
 			if (typeof requested === 'string') {
 				return selectEnvironmentById(vrunner, refresh, requested);
 			}
-			// объект опций (MCP/IPC): имя окружения в поле environment; без него меню не открываем
+			// объект опций (MCP): имя окружения в поле environment; без него меню не открываем
 			if (isAgentOptions(requested)) {
 				const environment = (requested as { environment?: unknown }).environment;
 				if (typeof environment === 'string') {
