@@ -113,7 +113,9 @@ docs(readme): обновили описание панелей
 
 ## Релизы
 
-Релиз выпускается тегом `vX.Y.Z` (`git tag v0.1.0 && git push origin v0.1.0`) или вручную: **Actions** → workflow **Release** → **Run workflow** (параметры: `version`, `skip_publish`, `draft`, `prerelease`). Workflow обновит версию в `package.json`, сгенерирует `CHANGELOG.md` из Conventional Commits, создаст GitHub Release и опубликует расширение в маркетплейсы.
+Релиз запускается вручную с ветки `main`: **Actions** → workflow **Release** → **Run workflow** (параметры: `version`, `skip_publish`, `draft`, `prerelease`). Свой тег пушить не нужно: workflow сам обновляет версию в `package.json`, генерирует `CHANGELOG.md` и ставит тег. Сайт публикуется в конце этого прогона, черновик сайт не обновляет.
+
+Если `SIGNPATH_SIGNING_POLICY_SLUG` пуст, прогон публикует неподписанный VSIX. Если указана рабочая политика, заявка уходит в SignPath, ссылка пишется в итог прогона. Заявку подтверждают в SignPath, затем в GitHub подтверждают environment `signpath-publish`. Публикация скачивает подписанный VSIX. Если подтвердить GitHub раньше, чем SignPath закончит подпись, останавливается только этот job: его повторяют, новая заявка не создаётся. Политика `test-signing` подписывает VSIX из текущего `main` и кладёт файл в артефакты прогона. Версию, журнал, тег, сайт и магазины она не меняет.
 
 Для публикации в секретах репозитория (**Settings** → **Secrets and variables** → **Actions**) должны быть заданы токены:
 

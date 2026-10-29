@@ -1,16 +1,14 @@
-# Публикует VSIX в GitHub Release, VS Code Marketplace и Open VSX Registry; обновляет CHANGELOG.
-# Запуск: пуш тега v* или вручную (workflow_dispatch) с вводом версии.
+# Ручной запуск с main.
+# Пустая политика — релиз без подписи. test-signing — только подпись текущего VSIX.
+# Другая политика — заявка SignPath, публикация после подтверждения environment.
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Версия релиза (например, v0.1.0 или v0.1.0-rc.1)'
-        required: true
+        description: 'Версия релиза (v0.1.0). Для тестовой подписи не нужна'
+        required: false
         type: string
       skip_publish:
         description: 'Пропустить публикацию в маркетплейсы (только GitHub Release)'
@@ -28,21 +26,32 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  release:
+  sign:
     runs-on: ubuntu-latest
-    env:
-      OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
-      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      vsix: ${{ steps.vsix.outputs.path }}
+      signpath: ${{ steps.mode.outputs.signpath }}
+      test: ${{ steps.mode.outputs.test }}
+      policy: ${{ steps.mode.outputs.policy }}
+      signing-request-id: ${{ steps.submit.outputs.signing-request-id }}
+      signing-request-url: ${{ steps.submit.outputs.signing-request-web-url }}
+      sha: ${{ steps.release-commit.outputs.sha }}
+      skip_publish: ${{ steps.flags.outputs.skip_publish }}
+      draft: ${{ steps.flags.outputs.draft }}
+      prerelease: ${{ steps.flags.outputs.prerelease }}
     permissions:
-      contents: write # создание релизов
-      packages: write # публикация в VS Code Marketplace
+      contents: write # коммит версии и журнала
+      actions: write # артефакт VSIX для SignPath
 
     steps:
+      - name: Релиз только с main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Запускайте Release вручную с ветки main."
+          exit 1
+
       - name: Получить код
         uses: actions/checkout@v7
         with:
@@ -63,19 +72,71 @@ jobs:
       - name: Скомпилировать TypeScript
         run: npm run compile
 
-      - name: Определить версию (из тега или ввода)
-        id: ver
+      - name: Режим подписи
+        id: mode
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-            VERSION=${VERSION#v}
+          POLICY="${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}"
+          echo "policy=$POLICY" >> "$GITHUB_OUTPUT"
+          if [ -n "$POLICY" ]; then
+            echo "signpath=true" >> "$GITHUB_OUTPUT"
           else
-            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "signpath=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$POLICY" = "test-signing" ]; then
+            echo "test=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "test=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "### Прогон"
+            if [ "$POLICY" = "test-signing" ]; then
+              echo "Тестовая подпись текущего VSIX. Версия, журнал, тег и публикация не меняются."
+            elif [ -n "$POLICY" ]; then
+              echo "Релиз с подписью, политика \`$POLICY\`."
+            else
+              echo "Релиз без подписи."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Проверить настройки подписи
+        if: steps.mode.outputs.signpath == 'true'
+        run: |
+          if [ -z "${{ vars.SIGNPATH_ORGANIZATION_ID }}" ] || [ -z "${{ vars.SIGNPATH_PROJECT_SLUG }}" ]; then
+            echo "Для подписи нужны SIGNPATH_ORGANIZATION_ID и SIGNPATH_PROJECT_SLUG."
+            exit 1
+          fi
+
+      - name: Параметры публикации
+        id: flags
+        run: |
+          echo "skip_publish=${{ github.event.inputs.skip_publish }}" >> "$GITHUB_OUTPUT"
+          echo "draft=${{ github.event.inputs.draft }}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${{ github.event.inputs.prerelease }}" >> "$GITHUB_OUTPUT"
+
+      - name: Определить версию
+        id: ver
+        if: steps.mode.outputs.test != 'true'
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          VERSION=${VERSION#v}
+          if [ -z "$VERSION" ]; then
+            echo "Укажите версию релиза."
+            exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Версия: $VERSION"
 
+      - name: Проверить, что тега ещё нет
+        if: steps.mode.outputs.test != 'true'
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "Тег $TAG уже есть. Если публикация оборвалась, повторите её job, а не весь прогон."
+            exit 1
+          fi
+
       - name: Обновить версию в package.json
+        if: steps.mode.outputs.test != 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
@@ -91,25 +152,14 @@ jobs:
             git push origin $BRANCH
           fi
 
-      - name: Создать и отправить тег, если его нет (workflow_dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          TAG="v${{ steps.ver.outputs.version }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Тег $TAG уже существует — пропуск"
-          else
-            git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action"
-            git tag -a "$TAG" -m "Release $TAG"
-            git push origin "$TAG"
-          fi
-
       - name: Установить Rust toolchain
+        if: steps.mode.outputs.test != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
       - name: Кэшировать cargo
+        if: steps.mode.outputs.test != 'true'
         uses: actions/cache@v6
         with:
           path: |
@@ -122,6 +172,7 @@ jobs:
             ${{ runner.os }}-cargo-git-cliff-
 
       - name: Установить git-cliff
+        if: steps.mode.outputs.test != 'true'
         run: |
           if ! command -v git-cliff &> /dev/null; then
             cargo install git-cliff --locked
@@ -130,6 +181,7 @@ jobs:
 
       - name: Сгенерировать CHANGELOG
         id: changelog
+        if: steps.mode.outputs.test != 'true'
         run: |
           # --tag помечает версией релиза коммиты, которые ещё не покрыты тегом:
           # без него шаг «Обновить версию» уводит main вперёд тега, и первой
@@ -169,9 +221,20 @@ jobs:
             echo "$CHANGELOG"
             echo EOF
           } >> $GITHUB_OUTPUT
+          {
+            echo "## Версия ${{ steps.ver.outputs.version }}"
+            echo ""
+            echo "$CHANGELOG"
+            echo ""
+            echo "### Установка"
+            echo ""
+            echo "Скачайте файл \`.vsix\` и установите через VS Code:"
+            echo "- \`Ctrl+Shift+P\` → \`Extensions: Install from VSIX...\`"
+          } > release-notes.md
         continue-on-error: true
 
       - name: Закоммитить CHANGELOG
+        if: steps.mode.outputs.test != 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
@@ -187,6 +250,11 @@ jobs:
           fi
         continue-on-error: true
 
+      - name: Запомнить коммит релиза
+        id: release-commit
+        if: steps.mode.outputs.test != 'true'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Собрать VSIX
         run: npm run package
 
@@ -197,21 +265,27 @@ jobs:
           echo "path=$VSIX" >> "$GITHUB_OUTPUT"
           echo "Собран VSIX: $VSIX"
 
-      # Подпись кода через SignPath Foundation.
-      # Шаги выполняются, только если в репозитории заданы переменные SignPath
-      # (Settings → Secrets and variables → Actions → Variables):
-      #   SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG
-      # и секрет SIGNPATH_API_TOKEN. Пока они не заданы — релиз идёт без подписи, как раньше.
-      - name: Загрузить неподписанный VSIX (для SignPath)
-        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+      - name: Заметки релиза на случай пустого журнала
+        if: steps.mode.outputs.test != 'true' && hashFiles('release-notes.md') == ''
+        run: echo "См. историю коммитов релиза." > release-notes.md
+
+      - name: Сохранить VSIX и заметки
         id: upload-unsigned
         uses: actions/upload-artifact@v7
         with:
           name: vsix-unsigned
           path: ${{ steps.vsix.outputs.path }}
 
-      - name: Подписать VSIX (SignPath Foundation)
-        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+      - name: Сохранить заметки релиза
+        if: steps.mode.outputs.test != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+
+      - name: Подписать тестовым сертификатом
+        if: steps.mode.outputs.test == 'true'
+        id: sign-test
         uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -223,37 +297,222 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: signed
 
-      - name: Заменить VSIX подписанным
-        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+      - name: Сохранить тестовый VSIX
+        if: steps.mode.outputs.test == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vsix-signed
+          path: signed
+
+      - name: Итог тестовой подписи
+        if: steps.mode.outputs.test == 'true'
         run: |
-          SIGNED=$(ls -1 signed/*.vsix | head -n1)
-          cp "$SIGNED" "${{ steps.vsix.outputs.path }}"
-          echo "Подписанный VSIX: $SIGNED -> ${{ steps.vsix.outputs.path }}"
+          {
+            echo "### Подпись"
+            echo "Подписанный файл — артефакт vsix-signed."
+            echo ""
+            echo "Заявка: ${{ steps.sign-test.outputs.signing-request-web-url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Отправить заявку на подпись
+        if: steps.mode.outputs.signpath == 'true' && steps.mode.outputs.test != 'true'
+        id: submit
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-for-completion: false
+
+      - name: Ссылка на заявку
+        if: steps.mode.outputs.signpath == 'true' && steps.mode.outputs.test != 'true'
+        run: |
+          {
+            echo "### Подпись"
+            echo "Заявку подтверждают в SignPath, затем в GitHub environment \`signpath-publish\`."
+            echo ""
+            echo "Заявка: ${{ steps.submit.outputs.signing-request-web-url }}"
+            echo "id: \`${{ steps.submit.outputs.signing-request-id }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: sign
+    if: needs.sign.outputs.signpath != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v7
+
+      - name: Скачать VSIX
+        uses: actions/download-artifact@v7
+        with:
+          name: vsix-unsigned
+          path: .
+
+      - name: Скачать заметки релиза
+        uses: actions/download-artifact@v7
+        with:
+          name: release-notes
+          path: .
+
+      - name: Поставить тег
+        run: |
+          git fetch --depth=1 origin "${{ needs.sign.outputs.sha }}"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          TAG="v${{ needs.sign.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "Тег $TAG уже есть, используем его."
+          else
+            git tag -a "$TAG" -m "Release $TAG" "${{ needs.sign.outputs.sha }}"
+            git push origin "$TAG"
+          fi
 
       - name: Создать GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ steps.ver.outputs.version }}
+          tag_name: v${{ needs.sign.outputs.version }}
           files: |
             *.vsix
-          body: |
-            ## Версия ${{ steps.ver.outputs.version }}
-
-            ${{ steps.changelog.outputs.changelog }}
-
-            ### Установка
-
-            Скачайте файл `.vsix` и установите через VS Code:
-            - `Ctrl+Shift+P` → `Extensions: Install from VSIX...`
-          draft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true' || false }}
-          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true' || false }}
+          body_path: release-notes.md
+          draft: ${{ needs.sign.outputs.draft == 'true' }}
+          prerelease: ${{ needs.sign.outputs.prerelease == 'true' }}
 
       - name: Опубликовать в Open VSX Registry
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.skip_publish != 'true'
-        run: npx --yes ovsx@1.2.0 publish --packagePath "${{ steps.vsix.outputs.path }}" --skip-duplicate
+        if: needs.sign.outputs.skip_publish != 'true'
+        run: npx --yes ovsx@1.2.0 publish --packagePath "$(ls -1 *.vsix | head -n1)" --skip-duplicate
         env:
-          OVSX_PAT: ${{ env.OVSX_TOKEN }}
+          OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
 
       - name: Опубликовать в VS Code Marketplace
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.skip_publish != 'true'
-        run: npx vsce publish --packagePath "${{ steps.vsix.outputs.path }}" --skip-duplicate
+        if: needs.sign.outputs.skip_publish != 'true'
+        run: npx vsce publish --packagePath "$(ls -1 *.vsix | head -n1)" --skip-duplicate
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+  publish-signed:
+    needs: sign
+    if: needs.sign.outputs.signpath == 'true' && needs.sign.outputs.test != 'true'
+    runs-on: ubuntu-latest
+    environment: signpath-publish
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v7
+
+      - name: Скачать заметки релиза
+        uses: actions/download-artifact@v7
+        with:
+          name: release-notes
+          path: .
+
+      - name: Проверить заявку и скачать подписанный VSIX
+        id: signed
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          ORG="${{ vars.SIGNPATH_ORGANIZATION_ID }}"
+          ID="${{ needs.sign.outputs.signing-request-id }}"
+          PAGE="${{ needs.sign.outputs.signing-request-url }}"
+          BODY=$(curl -fsS -H "Authorization: Bearer ${SIGNPATH_API_TOKEN}" \
+            "https://app.signpath.io/Api/v1/${ORG}/SigningRequests/${ID}/Status")
+          STATUS=$(printf '%s' "$BODY" | jq -r '.status // .Status // empty')
+          echo "Статус заявки: ${STATUS:-не разобран}"
+          case "$STATUS" in
+            Completed) ;;
+            WaitingForApproval|InProgress)
+              echo "Заявку ещё не подтвердили: ${PAGE}" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+            Denied|Failed|Canceled)
+              echo "Заявка ${STATUS}: ${PAGE}" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+            *)
+              echo "Неизвестный статус заявки."
+              echo "$BODY"
+              exit 1
+              ;;
+          esac
+          curl -fL -H "Authorization: Bearer ${SIGNPATH_API_TOKEN}" \
+            -o signed-artifact \
+            "https://app.signpath.io/Api/v1/${ORG}/SigningRequests/${ID}/SignedArtifact"
+          mkdir -p signed
+          # VSIX сам является zip. Снаружи архив — только если внутри есть другой .vsix.
+          if unzip -t signed-artifact >/dev/null 2>&1 && unzip -l signed-artifact | grep -q '\.vsix$'; then
+            unzip -o signed-artifact -d signed
+            VSIX=$(find signed -name '*.vsix' -print -quit)
+          else
+            mv signed-artifact signed/extension.vsix
+            VSIX=signed/extension.vsix
+          fi
+          if [ -z "$VSIX" ]; then
+            echo "В подписанном архиве нет .vsix"
+            exit 1
+          fi
+          echo "path=$VSIX" >> "$GITHUB_OUTPUT"
+
+      - name: Поставить тег
+        run: |
+          git fetch --depth=1 origin "${{ needs.sign.outputs.sha }}"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          TAG="v${{ needs.sign.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "Тег $TAG уже есть, используем его."
+          else
+            git tag -a "$TAG" -m "Release $TAG" "${{ needs.sign.outputs.sha }}"
+            git push origin "$TAG"
+          fi
+
+      - name: Сохранить подписанный VSIX
+        uses: actions/upload-artifact@v7
+        with:
+          name: vsix-signed
+          path: ${{ steps.signed.outputs.path }}
+
+      - name: Создать GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.sign.outputs.version }}
+          files: ${{ steps.signed.outputs.path }}
+          body_path: release-notes.md
+          draft: ${{ needs.sign.outputs.draft == 'true' }}
+          prerelease: ${{ needs.sign.outputs.prerelease == 'true' }}
+
+      - name: Опубликовать в Open VSX Registry
+        if: needs.sign.outputs.skip_publish != 'true'
+        run: npx --yes ovsx@1.2.0 publish --packagePath "${{ steps.signed.outputs.path }}" --skip-duplicate
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
+
+      - name: Опубликовать в VS Code Marketplace
+        if: needs.sign.outputs.skip_publish != 'true'
+        run: npx vsce publish --packagePath "${{ steps.signed.outputs.path }}" --skip-duplicate
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+  docs:
+    needs: [sign, publish, publish-signed]
+    if: |
+      always() &&
+      needs.sign.result == 'success' &&
+      needs.sign.outputs.test != 'true' &&
+      needs.sign.outputs.draft != 'true' &&
+      (needs.publish.result == 'success' || needs.publish-signed.result == 'success')
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      ref: ${{ needs.sign.outputs.sha }}
