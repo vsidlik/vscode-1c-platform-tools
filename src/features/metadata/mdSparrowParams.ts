@@ -143,6 +143,10 @@ export interface MdSparrowParams {
 	targetCfeRoot?: string;
 	/** Configuration.xml расширяемой конфигурации: источник режимов совместимости. */
 	mainConfigurationXml?: string;
+	/** Формат новых исходников: `designer` или `edt`. */
+	format?: 'designer' | 'edt';
+	/** Версия платформы в манифесте проекта EDT без базовой конфигурации. */
+	runtimeVersion?: string;
 	/** Префикс имён объектов расширения. */
 	namePrefix?: string;
 	/** Назначение расширения: patch, customization или add-on. */

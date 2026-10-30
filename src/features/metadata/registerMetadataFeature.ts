@@ -67,7 +67,9 @@ import {
 	type SourceSupportState,
 } from './metadataSourcePropertiesPanel';
 import { mdSparrowSchemaFlagFromConfigurationXml } from './mdSparrowSchemaVersion';
-import { pickDumpFormat } from './dumpFormatPick';
+import { pickDumpFormat, pickEdtPlatform } from './dumpFormatPick';
+import { externalArtifactTarget } from './externalArtifactTarget';
+import { sourceFormatPicks } from './sourceFormatPick';
 import {
 	runMdSparrowParamsMutation,
 	runMdSparrowParamsRead,
@@ -84,6 +86,7 @@ import {
 	defaultMetadataLeafOpenCommand,
 	isMetadataCommonForm,
 	MetadataErrorTreeItem,
+	MetadataNoticeTreeItem,
 	MetadataLeafTreeItem,
 	MetadataObjectNodeTreeItem,
 	MetadataObjectSectionTreeItem,
@@ -862,9 +865,36 @@ export function registerMetadataFeature(
 		const rootRelative = isReport
 			? paths.reportsContainer ?? CONVENTIONAL_PATHS.erf
 			: paths.processorsContainer ?? CONVENTIONAL_PATHS.epf;
-		const rootAbs = path.resolve(workspaceRoot, rootRelative);
+		const layout = await resolveProjectLayout(workspaceRoot);
+		const configuration = layout.configuration;
+		let format: 'designer' | 'edt';
+		if (configuration?.format === 'edt' || configuration?.format === 'designer') {
+			format = configuration.format;
+		} else {
+			const picked = await vscode.window.showQuickPick(
+				sourceFormatPicks(isReport ? 'report' : 'processor'),
+				{ title: isReport ? 'Формат внешнего отчёта' : 'Формат внешней обработки' }
+			);
+			if (!picked) {
+				return;
+			}
+			format = picked.format;
+		}
+		const target = externalArtifactTarget(workspaceRoot, rootRelative, format, configuration);
+		if (target.configurationMdo !== undefined && !fs.existsSync(target.configurationMdo)) {
+			void vscode.window.showErrorMessage('Не найдена конфигурация.');
+			return;
+		}
+		let runtimeVersion: string | undefined;
+		if (format === 'edt' && target.configurationMdo === undefined) {
+			const platform = await pickEdtPlatform(context);
+			if (!platform) {
+				return;
+			}
+			runtimeVersion = platform.platform;
+		}
 		try {
-			await fs.promises.mkdir(rootAbs, { recursive: true });
+			await fs.promises.mkdir(target.artifactsRoot, { recursive: true });
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e);
 			void vscode.window.showErrorMessage(msg.slice(0, MD_SPARROW_CLI_ERR_PREVIEW));
@@ -872,7 +902,7 @@ export function registerMetadataFeature(
 		}
 		let existingNames: string[] = [];
 		try {
-			const entries = await fs.promises.readdir(rootAbs, { withFileTypes: true });
+			const entries = await fs.promises.readdir(target.artifactsRoot, { withFileTypes: true });
 			existingNames = entries.filter((e) => e.isDirectory()).map((e) => e.name);
 		} catch {
 			existingNames = [];
@@ -882,26 +912,30 @@ export function registerMetadataFeature(
 		for (;;) {
 			const candidate = `${prefix}${nextIndex}`;
 			if (!existingNames.includes(candidate)) {
-				const configurationXml =
-					metadataTreeProvider.configurationXml ?? path.join(workspaceRoot, CONVENTIONAL_PATHS.cf, 'Configuration.xml');
-				const schema = await pickSchemaFlagInitEmptyCf(configurationXml);
-				if (schema === undefined) {
-					return;
+				const kind = isReport ? 'REPORT' : 'DATA_PROCESSOR';
+				const shared = {
+					op: 'external-artifact-add' as const,
+					artifactsRoot: target.artifactsRoot,
+					name: candidate,
+					kind,
+				};
+				let params: MdSparrowParams;
+				if (format === 'designer') {
+					const schema = await pickSchemaFlagInitEmptyCf(
+						metadataTreeProvider.configurationXml
+							?? path.join(workspaceRoot, CONVENTIONAL_PATHS.cf, 'Configuration.xml')
+					);
+					if (schema === undefined) {
+						return;
+					}
+					params = { ...shared, schemaVersion: schema };
+				} else if (target.configurationMdo !== undefined) {
+					params = { ...shared, mainConfigurationXml: target.configurationMdo };
+				} else {
+					params = { ...shared, format: 'edt', runtimeVersion };
 				}
 				const runtime = await ensureMdSparrowRuntime(context);
-				const res = await runMdSparrowParamsMutation(
-					runtime,
-					{
-						op: 'external-artifact-add',
-						artifactsRoot: rootAbs,
-						name: candidate,
-						kind: isReport ? 'REPORT' : 'DATA_PROCESSOR',
-						schemaVersion: schema,
-						// Внешний объект проекта EDT относится к конфигурации через базовый проект
-						...(formatOfFile(configurationXml) === 'edt' ? { mainConfigurationXml: configurationXml } : {}),
-					},
-					{ cwd: workspaceRoot }
-				);
+				const res = await runMdSparrowParamsMutation(runtime, params, { cwd: workspaceRoot });
 				if (res.exitCode !== 0) {
 					const errText = (res.stderr.trim() || res.stdout.trim() || `код ${res.exitCode}`).slice(
 						0,
@@ -910,6 +944,8 @@ export function registerMetadataFeature(
 					void vscode.window.showErrorMessage(errText);
 					return;
 				}
+				// Иначе дерево читает прежнюю раскладку без нового каталога и кэш отвечает старым составом
+				invalidateProjectLayout(workspaceRoot);
 				await metadataTreeProvider.refresh();
 				notifyQuiet(
 					isReport
@@ -1979,9 +2015,11 @@ export function registerMetadataFeature(
 				await vscode.env.clipboard.writeText(node.resourceUri.fsPath);
 			}
 		),
-		registerMetadataCommand('1c-platform-tools.metadata.copyError', async (item?: MetadataErrorTreeItem) => {
+		registerMetadataCommand('1c-platform-tools.metadata.copyError', async (item?: MetadataErrorTreeItem | MetadataNoticeTreeItem) => {
 			if (item instanceof MetadataErrorTreeItem) {
 				await vscode.env.clipboard.writeText(item.errorText);
+			} else if (item instanceof MetadataNoticeTreeItem) {
+				await vscode.env.clipboard.writeText(item.noticeText);
 			}
 		}),
 		registerMetadataCommand('1c-platform-tools.metadata.showLog', () => {
@@ -2699,6 +2737,12 @@ export function registerMetadataFeature(
 			await metadataTreeProvider.refresh();
 			notifyQuiet(`Расширение «${name}» удалено`);
 		}),
+		registerMetadataCommand('1c-platform-tools.metadata.addExternalReport', () => {
+			void runMdSparrowMutation(() => addExternalArtifact('externalErf'));
+		}),
+		registerMetadataCommand('1c-platform-tools.metadata.addExternalProcessor', () => {
+			void runMdSparrowMutation(() => addExternalArtifact('externalEpf'));
+		}),
 		registerMetadataCommand('1c-platform-tools.metadata.initEmptyCfe', async () => {
 			await runMdSparrowMutation(async () => {
 				const root = currentRoot();
@@ -2900,11 +2944,8 @@ export function registerMetadataFeature(
 		registerMetadataCommand('1c-platform-tools.metadata.initEmptyCf', async () => {
 			// Формат спрашивается первым: у проекта EDT свой путь создания и свой каталог
 			const format = await vscode.window.showQuickPick(
-				[
-					{ label: 'Выгрузка конфигуратора', description: 'XML в каталоге исходников', format: 'designer' as const },
-					{ label: 'Проект 1С:EDT', description: 'каталог проекта рядом с остальными', format: 'edt' as const },
-				],
-				{ title: 'Формат новой конфигурации' }
+				sourceFormatPicks('configuration'),
+				{ title: 'Формат конфигурации' }
 			);
 			if (!format) {
 				return;

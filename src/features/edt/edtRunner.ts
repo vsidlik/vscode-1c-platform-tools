@@ -20,7 +20,8 @@ import { buildProcessCommand } from '../../utils/commandUtils';
 import { createVRunnerTask, type TaskOutputChain } from '../tasks/vrunnerTask';
 import { runCancellableCommand } from '../../shared/cancellableProcess';
 import { logger } from '../../shared/logger';
-import { findEdtInstallations, pickEdtInstallation, type EdtInstallation } from '../../shared/edtLocator';
+import { edtStartDataDirectory, findEdtInstallations, pickEdtInstallation, type EdtInstallation } from '../../shared/edtLocator';
+import { iniWithVm, launcherJava, recordedJavaFeatures, requiredJavaFeature, vmFromIni } from '../ibases/edtStart';
 import { isEdtProject } from '../../shared/projectLayout';
 import { edtTemporaryDir } from '../../shared/edtStaging';
 import { projectConfiguration } from '../../shared/projectConfiguration';
@@ -305,6 +306,59 @@ export interface EdtCommand {
 	cwd: string;
 	/** Вывод шагов команды: общий терминал или фон; без него задача очищает терминал. */
 	output?: TaskOutputChain;
+	/** Установка этого запуска. Без неё берётся `edt.version` проекта. */
+	installation?: EdtInstallation;
+}
+
+/**
+ * Что сказать, когда у 1С:EDT нет той Java, которую требует её `1cedt.ini`.
+ *
+ * @param edtVersion - Версия установки, например `2026.2`
+ * @param required - Старший номер Java
+ * @returns Текст для пользователя
+ */
+export function edtJavaRequiredMessage(edtVersion: string, required: number, found: readonly number[] = []): string {
+	const version = edtVersion.trim() === '' ? '' : ` ${edtVersion.trim()}`;
+	const available = found.length > 0 ? ` На машине есть Java ${found.join(' и ')}.` : '';
+	return `1С:EDT${version} нужна Java ${required}.${available}`;
+}
+
+/**
+ * Проверяет, что в `1cedt.ini` есть Java.
+ *
+ * В команду `-vm` не попадает: `1cedtcli` отдаёт этот ключ в Java. Если строки
+ * нет, в ini пишется каталог `bin` версии из `-Dosgi.requiredJavaVersion`.
+ *
+ * @param installation - Установка, чей `1cedtcli` запускается
+ * @returns Текст отказа, если нужной Java нет
+ */
+function javaForEdtCli(installation: EdtInstallation): { error?: string } {
+	const iniPath = path.join(path.dirname(installation.cli), '1cedt.ini');
+	const ini = readOptional(iniPath);
+	if (ini === undefined || vmFromIni(ini)) {
+		return {};
+	}
+	const preferences = readOptional(path.join(edtStartDataDirectory(), 'preferences.json'));
+	const exe = launcherJava(ini, preferences, true);
+	if (exe) {
+		fs.writeFileSync(iniPath, iniWithVm(ini, path.dirname(exe)));
+		return {};
+	}
+	const required = requiredJavaFeature(ini);
+	if (required === undefined) {
+		return {};
+	}
+	const found = preferences === undefined ? [] : recordedJavaFeatures(preferences);
+	return { error: edtJavaRequiredMessage(installation.version, required, found) };
+}
+
+/** Текст файла либо undefined, если файла нет. */
+function readOptional(filePath: string): string | undefined {
+	try {
+		return fs.readFileSync(filePath, 'utf8');
+	} catch {
+		return undefined;
+	}
 }
 
 /**
@@ -313,6 +367,7 @@ export interface EdtCommand {
  * Порядок важен: рабочая область и общие параметры идут до `-command`, всё
  * после него достаётся самой команде. Лаунчер отдаёт JVM всё от первого
  * `-vmargs` до `-command`: второй `-vmargs` дошёл бы до Java буквально.
+ * Java задаёт `-vm` в `1cedt.ini`, не аргумент этой команды.
  */
 export function buildEdtArgs(request: EdtCommand, settings: EdtSettings): string[] {
 	const args = ['-data', request.workspaceDir, '-timeout', String(settings.timeoutSeconds)];
@@ -454,7 +509,7 @@ export async function runEdtCommand(request: EdtCommand): Promise<EdtRunResult> 
 	}
 
 	const settings = readEdtSettings();
-	const installation = resolveEdt(settings);
+	const installation = request.installation ?? resolveEdt(settings);
 	if (!installation) {
 		return notStarted(EDT_NOT_FOUND_MESSAGE, background);
 	}
@@ -471,6 +526,10 @@ export async function runEdtCommand(request: EdtCommand): Promise<EdtRunResult> 
 		);
 	}
 
+	const java = javaForEdtCli(installation);
+	if (java.error) {
+		return notStarted(java.error, background);
+	}
 	const args = buildEdtArgs(request, settings);
 	// Задача исполняет команду процессом, а не терминалом пользователя: экранирование по оболочке процесса
 	const command = buildProcessCommand(installation.cli, args);

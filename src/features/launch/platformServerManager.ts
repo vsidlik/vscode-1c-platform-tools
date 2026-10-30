@@ -20,6 +20,7 @@ import * as fs from 'node:fs/promises';
 import { VRunnerManager } from '../../shared/vrunnerManager';
 import { resolveFileIbAbsolutePath } from '../../shared/ibConnectionPath';
 import { logger, revealOutputChannel } from '../../shared/logger';
+import { showWorkspaceRequired } from '../../shared/configurationWriteTarget';
 import { notifyQuiet } from '../../shared/notify';
 import { ProcessOutputDecoder } from '../../shared/processOutput';
 import { PLATFORM_PATH_SETTING_TITLE, resolvePlatformBinaryInRoots } from '../../shared/platformBinary';
@@ -309,7 +310,7 @@ export class PlatformServerManager {
 	 */
 	public async start(workspaceRoot: string | undefined = currentRoot()): Promise<void> {
 		if (!workspaceRoot) {
-			vscode.window.showErrorMessage('Откройте рабочую область проекта 1С.');
+			showWorkspaceRequired();
 			return;
 		}
 
@@ -565,7 +566,7 @@ export class PlatformServerManager {
 	 */
 	public async openPublicationConfig(workspaceRoot: string | undefined = currentRoot()): Promise<void> {
 		if (!workspaceRoot) {
-			vscode.window.showErrorMessage('Откройте рабочую область проекта 1С.');
+			showWorkspaceRequired();
 			return;
 		}
 		const settings = this.readSettings(workspaceRoot);

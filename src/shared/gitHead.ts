@@ -2,30 +2,34 @@
  * Чтение текущей ветки git по файлу `.git/HEAD`.
  *
  * Файл читается напрямую (без запуска git): мгновенно, синхронно и не требует
- * git в PATH. Поддерживаются обычный каталог `.git` и файл-ссылка `.git`
- * с `gitdir:` (worktree, подмодуль).
+ * git в PATH. Поддерживаются обычный каталог `.git`, файл-ссылка `.git`
+ * с `gitdir:` (worktree, подмодуль) и подпроект, у которого `.git` лежит выше.
  */
 
 import * as path from 'node:path';
 import * as fsSync from 'node:fs';
 import { branchDirNameFromHead, parseGitHead } from './launchVariables';
 
+/** Что лежит в каталоге: нет `.git`, сломанный `.git` или каталог git-данных. */
+type GitProbe = { kind: 'absent' } | { kind: 'broken' } | { kind: 'dir'; path: string };
+
 /**
- * Каталог git-данных проекта: `.git` либо путь из файла-ссылки `gitdir:`.
+ * `.git` в одном каталоге: каталог, файл `gitdir:` или ничего.
  *
- * @param root - Корень проекта
- * @returns Абсолютный путь к каталогу git-данных или undefined вне репозитория
+ * Сломанный `.git` — граница репозитория: выше по дереву ветку не ищем.
+ *
+ * @param root - Каталог, в котором смотрим `.git`
  */
-function resolveGitDir(root: string): string | undefined {
+function probeGit(root: string): GitProbe {
 	const dotGit = path.join(root, '.git');
 	let stats: fsSync.Stats;
 	try {
 		stats = fsSync.statSync(dotGit);
 	} catch {
-		return undefined;
+		return { kind: 'absent' };
 	}
 	if (stats.isDirectory()) {
-		return dotGit;
+		return { kind: 'dir', path: dotGit };
 	}
 	// worktree/подмодуль: .git — файл вида `gitdir: <путь>`
 	try {
@@ -33,12 +37,50 @@ function resolveGitDir(root: string): string | undefined {
 		const match = /^gitdir:\s*(.+)\s*$/m.exec(content);
 		if (match) {
 			const gitDir = match[1].trim();
-			return path.isAbsolute(gitDir) ? gitDir : path.join(root, gitDir);
+			return { kind: 'dir', path: path.isAbsolute(gitDir) ? gitDir : path.join(root, gitDir) };
 		}
 	} catch {
-		// нечитаемый .git — репозиторием не считаем
+		// нечитаемый .git — репозиторием не считаем, но и не перешагиваем
 	}
-	return undefined;
+	return { kind: 'broken' };
+}
+
+/**
+ * Каталог git-данных проекта.
+ *
+ * Ищет `.git` в каталоге и выше: подпроект лежит внутри репозитория и своего
+ * `.git` не имеет. Worktree и подмодуль по-прежнему разбираются по `gitdir:`.
+ *
+ * @param start - Корень проекта или каталог внутри него
+ * @returns Абсолютный путь к каталогу git-данных или undefined вне репозитория
+ */
+export function resolveGitDirectory(start: string): string | undefined {
+	let current = path.resolve(start);
+	for (;;) {
+		const probe = probeGit(current);
+		if (probe.kind === 'dir') {
+			return probe.path;
+		}
+		if (probe.kind === 'broken') {
+			return undefined;
+		}
+		const parent = path.dirname(current);
+		if (parent === current) {
+			return undefined;
+		}
+		current = parent;
+	}
+}
+
+/**
+ * Файл `HEAD`, из которого читается имя ветки.
+ *
+ * @param start - Корень проекта
+ * @returns Абсолютный путь к `HEAD` или undefined вне репозитория
+ */
+export function gitHeadFile(start: string): string | undefined {
+	const gitDir = resolveGitDirectory(start);
+	return gitDir === undefined ? undefined : path.join(gitDir, 'HEAD');
 }
 
 /**
@@ -52,12 +94,12 @@ function resolveGitDir(root: string): string | undefined {
  * @returns Имя каталога ветки или undefined вне репозитория git
  */
 export function readGitBranchDirName(root: string): string | undefined {
-	const gitDir = resolveGitDir(root);
-	if (!gitDir) {
+	const headFile = gitHeadFile(root);
+	if (!headFile) {
 		return undefined;
 	}
 	try {
-		const head = fsSync.readFileSync(path.join(gitDir, 'HEAD'), 'utf8');
+		const head = fsSync.readFileSync(headFile, 'utf8');
 		return branchDirNameFromHead(parseGitHead(head));
 	} catch {
 		return undefined;

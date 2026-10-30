@@ -15,6 +15,7 @@ import { LOCAL_OVERRIDES_FILE } from '../../shared/envProfiles';
 import { environmentLabel } from '../../shared/environments';
 import { configurationScope } from '../../shared/activeConfiguration';
 import { onDidChangeCurrentProject, onDidChangeProjects } from '../../shared/workspaceProjects';
+import { watchGitHead } from '../../shared/gitHeadWatch';
 import { edtProjectName, readEdtSettings, resolveEdt } from '../edt/edtRunner';
 
 /** Элемент плашки профиля. */
@@ -75,21 +76,25 @@ export class LaunchProfileViewProvider implements vscode.TreeDataProvider<vscode
 		void this.vrunner.getVRunnerVersion().then(() => this.refresh());
 	}
 
-	/** Следит за файлами настроек проекта; .git/HEAD - за строкой ИБ с ${gitBranch}. */
+	/** Следит за файлами настроек проекта; HEAD репозитория — за строкой ИБ с ${gitBranch}. */
 	private watchProject(root: string | undefined): void {
 		this.projectWatcher?.dispose();
 		this.projectWatcher = undefined;
 		if (root === undefined) {
 			return;
 		}
+		const refresh = (): void => {
+			this.refresh();
+		};
 		const watcher = vscode.workspace.createFileSystemWatcher(
-			new vscode.RelativePattern(root, '{env*.json,autumn-properties*.json,.env,.env.*,.git/HEAD}')
+			new vscode.RelativePattern(root, '{env*.json,autumn-properties*.json,.env,.env.*}')
 		);
 		this.projectWatcher = vscode.Disposable.from(
 			watcher,
-			watcher.onDidCreate(() => this.refresh()),
-			watcher.onDidChange(() => this.refresh()),
-			watcher.onDidDelete(() => this.refresh())
+			watchGitHead(root, refresh),
+			watcher.onDidCreate(refresh),
+			watcher.onDidChange(refresh),
+			watcher.onDidDelete(refresh)
 		);
 	}
 

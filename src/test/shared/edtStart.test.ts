@@ -4,7 +4,12 @@ import {
 	edtStartArgs,
 	edtStartFromRegistryOutput,
 	findEdtStart,
-	jvmFromPreferences,
+	iniWithVm,
+	javaExecutable,
+	jvmOfFeature,
+	launcherJava,
+	requiredJavaFeature,
+	vmFromIni,
 	launchEdtStart,
 } from '../../features/ibases/edtStart';
 import { edtComponentRoots, fileUrlToPath } from '../../shared/edtLocator';
@@ -27,21 +32,45 @@ suite('Запуск 1cedtstart по ссылке базы', () => {
 		assert.strictEqual(edtStartFromRegistryOutput('ERROR: The system was unable to find the specified registry key'), undefined);
 	});
 
-	test('JVM берётся из настроек стартера, старшая версия, только существующая', () => {
+	test('в аргументах -vm это исполняемый файл, каталог из ini дополняется', () => {
+		assert.strictEqual(javaExecutable('C:\\Java\\17\\bin', 'win32', false), 'C:\\Java\\17\\bin\\javaw.exe');
+		assert.strictEqual(javaExecutable('C:\\Java\\25\\bin', 'win32', true), 'C:\\Java\\25\\bin\\java.exe');
+		assert.strictEqual(javaExecutable('C:\\Java\\25\\bin\\java.exe', 'win32', true), 'C:\\Java\\25\\bin\\java.exe');
 		const preferences = JSON.stringify({
 			jvmInfo: {
-				'17': { jvmPath: 'file:///C:/Program%20Files/Axiom/AxiomJDK-Pro-17-Full/bin/', jvmVersion: { featureVersion: 17 } },
-				'21': { jvmPath: 'file:///C:/Java/21/bin/', jvmVersion: { featureVersion: 21 } },
+				'17': { jvmPath: 'file:///C:/Java/17/bin/' },
+				'25': { jvmPath: 'file:///C:/Java/25/bin/' },
 			},
 		});
-		const existing = new Set(['C:\\Program Files\\Axiom\\AxiomJDK-Pro-17-Full\\bin\\javaw.exe', 'C:\\Java\\21\\bin\\javaw.exe']);
-		assert.strictEqual(jvmFromPreferences(preferences, 'win32', (file) => existing.has(file)), 'C:\\Java\\21\\bin\\javaw.exe');
+		const existing = new Set(['C:\\Java\\17\\bin\\javaw.exe', 'C:\\Java\\25\\bin\\java.exe']);
+		const ini = '-vm\nC:\\Java\\17\\bin\n-vmargs\n-Dosgi.requiredJavaVersion=17\n';
+		assert.strictEqual(launcherJava(ini, preferences, false, 'win32', (file) => existing.has(file)), 'C:\\Java\\17\\bin\\javaw.exe');
 		assert.strictEqual(
-			jvmFromPreferences(preferences, 'win32', (file) => file.includes('Axiom')),
-			'C:\\Program Files\\Axiom\\AxiomJDK-Pro-17-Full\\bin\\javaw.exe'
+			launcherJava('-Dosgi.requiredJavaVersion=25\n', preferences, true, 'win32', (file) => existing.has(file)),
+			'C:\\Java\\25\\bin\\java.exe'
 		);
-		assert.strictEqual(jvmFromPreferences('{}', 'win32', () => true), undefined);
-		assert.strictEqual(jvmFromPreferences('не json', 'win32', () => true), undefined);
+		assert.strictEqual(launcherJava('не ini', preferences, true, 'win32', () => true), undefined);
+	});
+
+	test('1cedtcli берёт Java нужной версии, консольную', () => {
+		const preferences = JSON.stringify({
+			jvmInfo: {
+				'17': { jvmPath: 'file:///C:/Java/17/bin/' },
+				'25': { jvmPath: 'file:///C:/Java/25/bin/' },
+			},
+		});
+		const existing = new Set(['C:\\Java\\17\\bin\\java.exe', 'C:\\Java\\25\\bin\\java.exe', 'C:\\Java\\25\\bin\\javaw.exe']);
+		assert.strictEqual(jvmOfFeature(preferences, 25, 'win32', (file) => existing.has(file)), 'C:\\Java\\25\\bin\\java.exe');
+		assert.strictEqual(jvmOfFeature(preferences, 21, 'win32', (file) => existing.has(file)), undefined);
+		assert.strictEqual(requiredJavaFeature('-Dosgi.requiredJavaVersion=25\n-Xmx4g'), 25);
+		assert.strictEqual(requiredJavaFeature('-Xmx4g'), undefined);
+		assert.strictEqual(vmFromIni('-vm\nC:\\Java\\17\\bin\n-vmargs\n-Dosgi.requiredJavaVersion=17'), 'C:\\Java\\17\\bin');
+		assert.strictEqual(vmFromIni('-vmargs\n-Dosgi.requiredJavaVersion=17'), undefined);
+		assert.strictEqual(
+			iniWithVm('-vmargs\n-Dosgi.requiredJavaVersion=25\n', 'C:\\Java\\25\\bin'),
+			'-vm\nC:\\Java\\25\\bin\n-vmargs\n-Dosgi.requiredJavaVersion=25\n'
+		);
+		assert.strictEqual(iniWithVm('-vm\nC:\\Java\\17\\bin\n-vmargs\n', 'C:\\Java\\25\\bin'), '-vm\nC:\\Java\\17\\bin\n-vmargs\n');
 	});
 
 	test('ссылка file переводится в путь целевой платформы независимо от хоста', () => {
@@ -57,13 +86,36 @@ suite('Запуск 1cedtstart по ссылке базы', () => {
 		assert.deepStrictEqual(edtStartArgs(undefined, 'C:\\Java\\bin\\javaw.exe', 'win32'), ['-vm', '"C:\\Java\\bin\\javaw.exe"']);
 	});
 
-	test('запуск берёт стартер из реестра и его JVM из настроек', () => {
+	test('запуск передаёт javaw версии из ini, а не старшую из настроек', () => {
 		const spawned: { command: string; args: readonly string[] }[] = [];
 		const exe = 'C:\\1C\\1CE\\components\\1c-edt-start-0.8.0\\1cedtstart.exe';
 		const result = launchEdtStart(URL, {
 			platform: 'win32',
 			registryQuery: () => `    (Default)    REG_SZ    "${exe}" "%1"`,
-			readFile: () => JSON.stringify({ jvmInfo: { '17': { jvmPath: 'file:///C:/Java/17/bin/' } } }),
+			readFile: (file) => file.endsWith('1cedtstart.ini')
+				? '-Dosgi.requiredJavaVersion=17\n'
+				: JSON.stringify({
+					jvmInfo: {
+						'17': { jvmPath: 'file:///C:/Java/17/bin/' },
+						'25': { jvmPath: 'file:///C:/Java/25/bin/' },
+					},
+				}),
+			exists: (file) => file === exe || file.endsWith('\\javaw.exe'),
+			spawn: (command, args) => spawned.push({ command, args }),
+		});
+		assert.ok(result.ok);
+		assert.deepStrictEqual(spawned, [{ command: exe, args: ['-vm', '"C:\\Java\\17\\bin\\javaw.exe"', `"${URL}"`] }]);
+	});
+
+	test('каталог -vm из ini стартера передаётся как javaw.exe', () => {
+		const spawned: { command: string; args: readonly string[] }[] = [];
+		const exe = 'C:\\1C\\1CE\\components\\1c-edt-start-0.8.0\\1cedtstart.exe';
+		const result = launchEdtStart(URL, {
+			platform: 'win32',
+			registryQuery: () => `    (Default)    REG_SZ    "${exe}" "%1"`,
+			readFile: (file) => file.endsWith('1cedtstart.ini')
+				? '-vm\nC:\\Java\\17\\bin\n-vmargs\n'
+				: JSON.stringify({ jvmInfo: { '25': { jvmPath: 'file:///C:/Java/25/bin/' } } }),
 			exists: (file) => file === exe || file === 'C:\\Java\\17\\bin\\javaw.exe',
 			spawn: (command, args) => spawned.push({ command, args }),
 		});

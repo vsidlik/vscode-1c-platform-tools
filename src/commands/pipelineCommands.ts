@@ -46,6 +46,7 @@ import {
 } from '../shared/pipelines/pipelineRunner';
 import { emitPipelineRunEvent } from '../shared/pipelines/pipelineEvents';
 import { PIPELINE_EDITOR_VIEW_TYPE, PipelineEditorProvider } from '../features/pipelines/pipelineEditorProvider';
+import { showWorkspaceRequired } from '../shared/configurationWriteTarget';
 import { notifyQuiet } from '../shared/notify';
 import { untrustedWorkspaceBlocks, WORKSPACE_TRUST_REQUIRED } from '../shared/workspaceTrust';
 
@@ -678,7 +679,7 @@ ${result.stderr ?? ''}`
 	}
 
 	private warnNoWorkspace(): undefined {
-		void vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+		showWorkspaceRequired();
 		return undefined;
 	}
 

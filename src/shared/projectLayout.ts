@@ -571,6 +571,10 @@ async function walk(root: string, skip: ReadonlySet<string>, stops: ReadonlySet<
 		if (tests !== undefined && fssync.existsSync(tests)) {
 			await walk(tests, skip, stops, found, false);
 		}
+		// Корень обхода сам является проектом: внешние проекты внутри него обычный обход не видит
+		if (top) {
+			await walkEdtExternalProjects(here.dir, skip, stops, found);
+		}
 		return;
 	}
 	let entries: fssync.Dirent[];
@@ -592,6 +596,33 @@ async function walk(root: string, skip: ReadonlySet<string>, stops: ReadonlySet<
 			continue;
 		}
 		await walk(path.join(root, entry.name), skip, stops, found, false);
+	}
+}
+
+/** Соседние каталоги с проектом внешних отчётов или обработок. */
+async function walkEdtExternalProjects(
+	projectDir: string,
+	skip: ReadonlySet<string>,
+	stops: ReadonlySet<string>,
+	found: Found
+): Promise<void> {
+	let entries: fssync.Dirent[];
+	try {
+		entries = await fs.readdir(projectDir, { withFileTypes: true });
+	} catch {
+		return;
+	}
+	for (const entry of entries) {
+		if (!entry.isDirectory() || entry.name.startsWith('.') || SKIP_DIRECTORIES.has(entry.name) || skip.has(entry.name)) {
+			continue;
+		}
+		const child = path.join(projectDir, entry.name);
+		const external = Object.values(EDT_EXTERNAL_DIRECTORIES).some((kindDirectory) =>
+			fssync.existsSync(path.join(child, 'src', kindDirectory))
+		);
+		if (external) {
+			await walk(child, skip, stops, found, false);
+		}
 	}
 }
 

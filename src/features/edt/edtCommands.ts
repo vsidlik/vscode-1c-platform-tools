@@ -16,6 +16,9 @@ import { configurationScope } from '../../shared/activeConfiguration';
 import type { SourceFormat } from '../../shared/projectLayout';
 import { VRunnerManager } from '../../shared/vrunnerManager';
 import { logger } from '../../shared/logger';
+import { edtInstallationsForChoice, findEdtInstallations, type EdtInstallation } from '../../shared/edtLocator';
+import { configurationWriteTarget, showWorkspaceRequired } from '../../shared/configurationWriteTarget';
+import { projectConfiguration } from '../../shared/projectConfiguration';
 import {
 	EDT_NOT_FOUND_MESSAGE,
 	edtEditorTaskDefinition,
@@ -29,15 +32,13 @@ import {
 import { showValidationFindings } from './edtDiagnostics';
 import { buildProcessCommand } from '../../utils/commandUtils';
 import { createVRunnerTask, TaskOutputChain } from '../tasks/vrunnerTask';
+import { pickEdtPlatform } from '../metadata/dumpFormatPick';
 import { ensureMdSparrowRuntime } from '../metadata/mdSparrowBootstrap';
 import { runMdSparrowParamsMutation } from '../metadata/mdSparrowParams';
 import { notifyQuiet } from '../../shared/notify';
 import { ensureWorkspaceTrusted } from '../../shared/workspaceTrust';
 
 const log = logger.scope('edt');
-
-/** Версия формата выгрузки-заготовки: свежая, чтобы проект получил новую платформу. */
-const EMPTY_DUMP_SCHEMA = 'V2_21';
 
 /** Проект EDT, над которым идёт работа. */
 interface EdtTarget {
@@ -64,7 +65,7 @@ async function edtTarget(requireEdt = true): Promise<EdtTarget | undefined> {
 	const vrunner = VRunnerManager.getInstance();
 	const workspaceRoot = vrunner.getWorkspaceRoot();
 	if (!workspaceRoot) {
-		void vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+		showWorkspaceRequired();
 		return undefined;
 	}
 
@@ -167,7 +168,7 @@ export async function createEdtProject(context: vscode.ExtensionContext): Promis
 	const vrunner = VRunnerManager.getInstance();
 	const workspaceRoot = vrunner.getWorkspaceRoot();
 	if (!workspaceRoot) {
-		void vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+		showWorkspaceRequired();
 		return undefined;
 	}
 
@@ -186,14 +187,55 @@ export async function createEdtProject(context: vscode.ExtensionContext): Promis
 		return undefined;
 	}
 
+	// Платформа пишется в манифест и потом не меняется. Версия 1С:EDT в файлах проекта
+	// не хранится: проект импортирует выбранная 1cedtcli.
+	const settings = readEdtSettings(workspaceRoot);
+	const found = findEdtInstallations(settings.path);
+	if (found.installations.length === 0) {
+		void vscode.window.showErrorMessage(EDT_NOT_FOUND_MESSAGE);
+		return undefined;
+	}
+	const platform = await pickEdtPlatform(context);
+	if (!platform) {
+		return undefined;
+	}
+	const ordered = edtInstallationsForChoice(found.installations, settings.version);
+	const picked = await vscode.window.showQuickPick(
+		ordered.map((item) => ({
+			label: item.version || 'без номера',
+			description: `платформа ${platform.platform}`,
+			installation: item,
+		})),
+		{
+			title: 'Версия 1С:EDT',
+			placeHolder: 'Этой версией создаётся проект. Младшая его не откроет',
+		}
+	);
+	if (!picked) {
+		return undefined;
+	}
+	const installation: EdtInstallation = picked.installation;
+	if (installation.version) {
+		try {
+			await projectConfiguration(workspaceRoot).update(
+				'edt.version',
+				installation.version,
+				configurationWriteTarget(workspaceRoot)
+			);
+		} catch (error) {
+			log.warn(`не удалось запомнить версию EDT: ${error instanceof Error ? error.message : String(error)}`);
+			void vscode.window.showErrorMessage('Не удалось запомнить версию 1С:EDT.');
+			return undefined;
+		}
+	}
+
 	const emptyDump = path.join(os.tmpdir(), `edt-empty-${Date.now()}`);
 	try {
 		await fs.mkdir(emptyDump, { recursive: true });
 		const runtime = await ensureMdSparrowRuntime(context, workspaceRoot);
 		const created = await runMdSparrowParamsMutation(
 			runtime,
-			// Версию формата задаёт выгрузка-заготовка: 1С:EDT берёт из неё версию платформы
-			{ op: 'init-empty-cf', targetCfRoot: emptyDump, schemaVersion: EMPTY_DUMP_SCHEMA, name: projectName },
+			{ op: 'init-empty-cf', targetCfRoot: emptyDump, schemaVersion: platform.schemaVersion, name: projectName },
 			{ cwd: workspaceRoot }
 		);
 		if (created.exitCode !== 0) {
@@ -207,11 +249,13 @@ export async function createEdtProject(context: vscode.ExtensionContext): Promis
 			title: `EDT: новая конфигурация ${projectName}`,
 			workspaceDir: edtWorkspaceDir(workspaceRoot, vrunner.getOutPath()),
 			cwd: workspaceRoot,
+			installation,
 		});
 		if (imported.exitCode !== 0) {
 			return undefined;
 		}
-		notifyQuiet(`Пустая конфигурация создана в формате 1С:EDT: ${projectName}`);
+		const edt = installation.version ? `1С:EDT ${installation.version}` : '1С:EDT';
+		notifyQuiet(`Пустая конфигурация создана: ${projectName}, ${edt}, платформа ${platform.platform}`);
 		return projectDir;
 	} finally {
 		await fs.rm(emptyDump, { recursive: true, force: true });

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import {
 	MetadataErrorTreeItem,
+	MetadataNoticeTreeItem,
 	MetadataLeafTreeItem,
 	MetadataMdGroupTreeItem,
 	MetadataMdSubgroupTreeItem,
@@ -760,14 +761,16 @@ suite('metadataTreeView: ошибка чтения дерева', () => {
 		assert.strictEqual((rows[0].iconPath as vscode.ThemeIcon).id, 'error');
 	});
 
-	test('проект без метаданных - пояснение, а не ошибка', async () => {
+	test('проект без метаданных показывает пояснение с копированием и журналом', async () => {
 		const provider = providerWithError('');
-		(provider as unknown as { _notice: string })._notice = 'В проекте OneScript нет метаданных 1С';
+		(provider as unknown as { _notice: string })._notice = 'Исходный код не найден';
 		const rows = await provider.getChildren();
 
 		assert.strictEqual(rows.length, 1);
-		assert.ok(!(rows[0] instanceof MetadataErrorTreeItem));
-		assert.strictEqual(rows[0].contextValue, undefined);
+		assert.ok(rows[0] instanceof MetadataNoticeTreeItem);
+		assert.strictEqual(rows[0].contextValue, 'metadataNotice');
+		assert.strictEqual(rows[0].noticeText, 'Исходный код не найден');
+		assert.strictEqual((rows[0].iconPath as vscode.ThemeIcon).id, 'info');
 	});
 });
 

@@ -4,9 +4,8 @@
  * Кнопка «1C:EDT» платформы открывает ссылку `e1cedt://start/open`, а обработчик
  * схемы, 1cedtstart, находит или заводит рабочую область под базу и запускает
  * в ней EDT. 1cedtstart собран на Equinox и без явного `-vm` берёт первую Java
- * из PATH, а без JavaFX в ней падает ещё до разбора ссылки. Поэтому запуск идёт
- * не через системный обработчик, а прямо: стартер и его JVM берутся из его же
- * файлов.
+ * из PATH. Запуск идёт прямо: в аргументах всегда `javaw`, путь берётся из `-vm`
+ * в ini либо из версии `-Dosgi.requiredJavaVersion` в настройках стартера.
  *
  * @module edtStart
  */
@@ -24,9 +23,27 @@ export function edtStartFileName(platform: NodeJS.Platform = process.platform): 
 	return platform === 'win32' ? '1cedtstart.exe' : '1cedtstart';
 }
 
-/** Имя Java без консоли: с ней у стартера не висело бы чёрное окно. */
-function javaFileName(platform: NodeJS.Platform): string {
-	return platform === 'win32' ? 'javaw.exe' : 'java';
+/** Имя Java: у стартера без консоли, у `1cedtcli` — с консолью, чтобы был виден вывод. */
+function javaFileName(platform: NodeJS.Platform, console: boolean): string {
+	if (platform !== 'win32') {
+		return 'java';
+	}
+	return console ? 'java.exe' : 'javaw.exe';
+}
+
+/**
+ * Какая Java нужна установке EDT: строка `-Dosgi.requiredJavaVersion` в `1cedt.ini`.
+ *
+ * @param ini - Текст `1cedt.ini`
+ * @returns Старший номер Java либо undefined, если требования нет
+ */
+export function requiredJavaFeature(ini: string): number | undefined {
+	const match = ini.match(/-Dosgi\.requiredJavaVersion=(\d+)/);
+	if (!match) {
+		return undefined;
+	}
+	const feature = Number.parseInt(match[1], 10);
+	return Number.isFinite(feature) ? feature : undefined;
 }
 
 /**
@@ -66,22 +83,149 @@ export function edtStartInComponents(
 }
 
 /**
- * JVM, которую 1cedtstart записал в своих настройках.
+ * Путь из строки `-vm` в ini Eclipse.
  *
- * В `preferences.json` стартер держит `jvmInfo` по версиям Java; это JVM с JavaFX,
- * на которых он запускает EDT, и на ней же он поднимается сам. Берётся старшая
- * версия.
+ * Строка должна идти до `-vmargs`: так лаунчер отличает свою Java от аргументов JVM.
+ * В значении каталог `bin` или сам исполняемый файл.
  *
- * @param preferencesJson - Содержимое `preferences.json`
+ * @param ini - Текст `1cedtstart.ini` или `1cedt.ini`
+ * @returns Путь либо undefined, если строки нет
+ */
+export function vmFromIni(ini: string): string | undefined {
+	const lines = ini.split(/\r?\n/);
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index].trim();
+		if (line === '-vmargs') {
+			return undefined;
+		}
+		if (line === '-vm') {
+			const next = lines[index + 1]?.trim();
+			return next && !next.startsWith('-') ? next : undefined;
+		}
+		if (line.startsWith('-vm ')) {
+			const value = line.slice('-vm '.length).trim();
+			return value.length > 0 ? value : undefined;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Вставляет `-vm` перед `-vmargs`, если строки ещё нет.
+ *
+ * `1cedtcli` читает Java только из ini. Тот же ключ в команде он отдаёт в Java.
+ *
+ * @param ini - Текст ini
+ * @param bin - Каталог `bin` нужной Java
+ * @returns Текст с одной строкой `-vm`
+ */
+export function iniWithVm(ini: string, bin: string): string {
+	if (vmFromIni(ini)) {
+		return ini;
+	}
+	const nl = ini.includes('\r\n') ? '\r\n' : '\n';
+	const block = `-vm${nl}${bin}${nl}`;
+	const at = ini.search(/^-vmargs[ \t]*$/m);
+	if (at < 0) {
+		return ini.endsWith('\n') ? ini + block : `${ini}${nl}${block}`;
+	}
+	return ini.slice(0, at) + block + ini.slice(at);
+}
+
+/**
+ * Исполняемый файл для окна стартера.
+ *
+ * В ini путь бывает каталогом `bin`. Стартеру в аргументах нужен `javaw`.
+ *
+ * @param vmPath - Путь из ini или из настроек стартера
+ * @param platform - Операционная система
+ * @param console - `java` для консоли, `javaw` для окна
+ * @returns Путь к исполняемому файлу
+ */
+export function javaExecutable(vmPath: string, platform: NodeJS.Platform = process.platform, console = true): string {
+	const joiner = platform === 'win32' ? path.win32 : path.posix;
+	const base = joiner.basename(vmPath).toLowerCase();
+	if (base === 'java' || base === 'java.exe' || base === 'javaw.exe') {
+		return vmPath;
+	}
+	return joiner.join(vmPath, javaFileName(platform, console));
+}
+
+/**
+ * Java лаунчера: файл из `-vm` в ini, иначе версия из `-Dosgi.requiredJavaVersion`.
+ *
+ * @param ini - Текст ini продукта; без `-vm` и без номера версии Java не выбирается
+ * @param preferencesJson - Содержимое `preferences.json` стартера
+ * @param console - `java` для `1cedtcli`, `javaw` для окна стартера
  * @param platform - Операционная система
  * @param exists - Проверка файла (в тестах подменяется)
- * @returns Путь к Java без консоли или undefined
+ * @returns Путь к исполняемому файлу или undefined
  */
-export function jvmFromPreferences(
-	preferencesJson: string,
+export function launcherJava(
+	ini: string | undefined,
+	preferencesJson: string | undefined,
+	console: boolean,
 	platform: NodeJS.Platform = process.platform,
 	exists: (filePath: string) => boolean = fs.existsSync
 ): string | undefined {
+	const pinned = ini === undefined ? undefined : vmFromIni(ini);
+	if (pinned) {
+		const exe = javaExecutable(pinned, platform, console);
+		return exists(exe) ? exe : undefined;
+	}
+	const required = ini === undefined ? undefined : requiredJavaFeature(ini);
+	if (required === undefined || preferencesJson === undefined) {
+		return undefined;
+	}
+	return jvmOfFeature(preferencesJson, required, platform, exists, console);
+}
+
+/**
+ * Java нужной версии из настроек 1C:EDT Start.
+ *
+ * `java` с консолью — для `1cedtcli`, чтобы вывод попал в задачу. `javaw` — для окна стартера.
+ *
+ * @param preferencesJson - Содержимое `preferences.json`
+ * @param feature - Старший номер Java, как в ini
+ * @param platform - Операционная система
+ * @param exists - Проверка файла (в тестах подменяется)
+ * @param console - Брать `java`, а не `javaw`
+ * @returns Путь к Java или undefined
+ */
+export function jvmOfFeature(
+	preferencesJson: string,
+	feature: number,
+	platform: NodeJS.Platform = process.platform,
+	exists: (filePath: string) => boolean = fs.existsSync,
+	console = true
+): string | undefined {
+	const info = jvmInfoOf(preferencesJson);
+	if (!info) {
+		return undefined;
+	}
+	return jvmCandidates(info, platform, console, exists)
+		.find((candidate) => candidate.feature === feature)?.java;
+}
+
+/**
+ * Старшие номера Java, записанные в настройках 1C:EDT Start.
+ *
+ * @param preferencesJson - Содержимое `preferences.json`
+ * @returns Номера от старшего к младшему; пусто, если настроек нет
+ */
+export function recordedJavaFeatures(preferencesJson: string): number[] {
+	const info = jvmInfoOf(preferencesJson);
+	if (!info) {
+		return [];
+	}
+	return Object.keys(info)
+		.map((key) => Number.parseInt(key, 10))
+		.filter((feature) => Number.isFinite(feature))
+		.sort((left, right) => right - left);
+}
+
+/** `jvmInfo` из настроек стартера. */
+function jvmInfoOf(preferencesJson: string): Record<string, unknown> | undefined {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(preferencesJson);
@@ -92,20 +236,34 @@ export function jvmFromPreferences(
 	if (typeof info !== 'object' || info === null) {
 		return undefined;
 	}
+	return info as Record<string, unknown>;
+}
+
+/** Записанные в настройках стартера JVM, от старшей версии к младшей. */
+function jvmCandidates(
+	info: Record<string, unknown>,
+	platform: NodeJS.Platform,
+	console: boolean,
+	exists: (filePath: string) => boolean
+): { feature: number; java: string }[] {
 	const candidates: { feature: number; java: string }[] = [];
 	const joiner = platform === 'win32' ? path.win32 : path.posix;
-	for (const [key, value] of Object.entries(info as Record<string, unknown>)) {
+	const names = platform === 'win32' && console
+		? [javaFileName(platform, true), javaFileName(platform, false)]
+		: [javaFileName(platform, console)];
+	for (const [key, value] of Object.entries(info)) {
 		const jvmPath = (value as { jvmPath?: unknown } | null)?.jvmPath;
 		if (typeof jvmPath !== 'string') {
 			continue;
 		}
-		const java = joiner.join(fileUrlToPath(jvmPath, platform), javaFileName(platform));
-		if (exists(java)) {
+		const bin = fileUrlToPath(jvmPath, platform);
+		const java = names.map((name) => joiner.join(bin, name)).find((file) => exists(file));
+		if (java) {
 			candidates.push({ feature: Number.parseInt(key, 10) || 0, java });
 		}
 	}
 	candidates.sort((left, right) => right.feature - left.feature);
-	return candidates[0]?.java;
+	return candidates;
 }
 
 /**
@@ -205,10 +363,14 @@ export function launchEdtStart(url?: string, deps: LaunchEdtStartDeps = {}): Lau
 					: '1cedtstart не найден: установите 1С:EDT через него.',
 		};
 	}
-	const preferences = (deps.readFile ?? readText)(
-		deps.preferencesPath ?? path.join(edtStartDataDirectory(platform), 'preferences.json')
+	const read = deps.readFile ?? readText;
+	const jvm = launcherJava(
+		read(path.join(path.dirname(binary), '1cedtstart.ini')),
+		read(deps.preferencesPath ?? path.join(edtStartDataDirectory(platform), 'preferences.json')),
+		false,
+		platform,
+		exists
 	);
-	const jvm = preferences === undefined ? undefined : jvmFromPreferences(preferences, platform, exists);
 	const args = edtStartArgs(url, jvm, platform);
 	(deps.spawn ?? ((command, spawnArgs) => spawnDetached(command, spawnArgs, undefined, platform)))(binary, args);
 	return { ok: true, binary, args };

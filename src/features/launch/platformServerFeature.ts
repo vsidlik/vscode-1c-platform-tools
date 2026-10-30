@@ -17,6 +17,7 @@ import { isAgentOptions, uiOnlyHandler } from '../../shared/agentGate';
 import { PlatformServerManager, ServerState, PublicationSelection } from './platformServerManager';
 import { ServerDebugSessions } from './serverDebugSessions';
 import { notifyQuiet } from '../../shared/notify';
+import { configurationWriteTarget, showWorkspaceRequired } from '../../shared/configurationWriteTarget';
 import { projectConfiguration } from '../../shared/projectConfiguration';
 import {
 	currentRoot,
@@ -236,7 +237,7 @@ export async function startServerDebug(manager: PlatformServerManager, debugSess
 	const root = currentRoot();
 	const workspaceFolder = root === undefined ? undefined : workspaceFolderOf(root);
 	if (root === undefined || !workspaceFolder) {
-		vscode.window.showErrorMessage('Откройте рабочую область проекта 1С.');
+		showWorkspaceRequired();
 		return;
 	}
 
@@ -259,7 +260,7 @@ export async function startServerDebug(manager: PlatformServerManager, debugSess
 		if (action !== 'Включить') {
 			return;
 		}
-		await projectConfiguration(root).update('server.debug', true, vscode.ConfigurationTarget.Workspace);
+		await projectConfiguration(root).update('server.debug', true, configurationWriteTarget(root));
 	}
 
 	// Перечитываем настройки после возможного включения отладки.

@@ -946,6 +946,20 @@
         "category": "1С: Метаданные"
       },
       {
+        "command": "1c-platform-tools.metadata.addExternalReport",
+        "title": "Создать внешний отчёт",
+        "shortTitle": "Внешний отчёт",
+        "icon": "$(book)",
+        "category": "1С: Метаданные"
+      },
+      {
+        "command": "1c-platform-tools.metadata.addExternalProcessor",
+        "title": "Создать внешнюю обработку",
+        "shortTitle": "Внешняя обработка",
+        "icon": "$(tools)",
+        "category": "1С: Метаданные"
+      },
+      {
         "command": "1c-platform-tools.metadata.deleteExtension",
         "title": "Удалить",
         "icon": "$(trash)",
@@ -3791,22 +3805,22 @@
         },
         {
           "command": "1c-platform-tools.metadata.copyError",
-          "when": "view == 1c-platform-tools-metadata-tree && viewItem =~ /(^| )metadataError( |$)/",
+          "when": "view == 1c-platform-tools-metadata-tree && viewItem =~ /(^| )metadata(Error|Notice)( |$)/",
           "group": "6_copy@1"
         },
         {
           "command": "1c-platform-tools.metadata.showLog",
-          "when": "view == 1c-platform-tools-metadata-tree && viewItem =~ /(^| )metadataError( |$)/",
+          "when": "view == 1c-platform-tools-metadata-tree && viewItem =~ /(^| )metadata(Error|Notice)( |$)/",
           "group": "7_log@1"
         },
         {
           "command": "1c-platform-tools.metadata.copyError",
-          "when": "view == 1c-platform-tools-metadata-tree && viewItem =~ /(^| )metadataError( |$)/",
+          "when": "view == 1c-platform-tools-metadata-tree && viewItem =~ /(^| )metadata(Error|Notice)( |$)/",
           "group": "inline"
         },
         {
           "command": "1c-platform-tools.metadata.showLog",
-          "when": "view == 1c-platform-tools-metadata-tree && viewItem =~ /(^| )metadataError( |$)/",
+          "when": "view == 1c-platform-tools-metadata-tree && viewItem =~ /(^| )metadata(Error|Notice)( |$)/",
           "group": "inline"
         },
         {
@@ -3945,6 +3959,14 @@
         {
           "command": "1c-platform-tools.metadata.initEmptyCfe",
           "group": "navigation@1"
+        },
+        {
+          "command": "1c-platform-tools.metadata.addExternalReport",
+          "group": "navigation@2"
+        },
+        {
+          "command": "1c-platform-tools.metadata.addExternalProcessor",
+          "group": "navigation@3"
         }
       ],
       "editor/title/context": [
@@ -4843,7 +4865,7 @@
             "type": "string",
             "default": "",
             "scope": "resource",
-            "description": "Версия 1С:EDT, когда установлено несколько: 2026.1 или начало номера. Пусто: старшая из найденных. Проект, созданный старшей версией, младшая не откроет."
+            "description": "Версия 1С:EDT, если установлено несколько, например 2026.1. Пусто: старшая из найденных."
           },
           "1c-platform-tools.edt.workspace": {
             "type": "string",
@@ -4936,7 +4958,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",
     "test": "vscode-test && npm run test:node",
-    "test:node": "node --test out/test/shared/skillMcpNames.node.js out/test/shared/gitHead.node.js out/test/shared/dotEnv.node.js out/test/shared/environments.node.js out/test/shared/codeEnvironmentVariables.node.js out/test/shared/ovmPaths.node.js out/test/shared/processOutput.node.js out/test/shared/processTermination.node.js out/test/shared/ibsrvDataLock.node.js out/test/shared/channelLocation.node.js out/test/shared/windowRegistry.node.js out/test/utils/shellArgvRoundtrip.node.js out/test/shared/executableLookup.node.js out/test/testing/mutatosRun.node.js out/test/testing/mutatosSources.node.js out/test/testing/mutatosReport.node.js out/test/spreadsheet/spreadsheetHtml.node.js out/test/features/odata.node.js out/test/metadata/erTheme.node.js out/test/metadata/jarJavaVersion.node.js out/test/testing/yaxunitReleases.node.js out/test/metadata/erExport.node.js",
+    "test:node": "node --test out/test/shared/skillMcpNames.node.js out/test/shared/gitHead.node.js out/test/shared/launchConfigurations.node.js out/test/shared/workspaceScope.node.js out/test/shared/dotEnv.node.js out/test/shared/environments.node.js out/test/shared/codeEnvironmentVariables.node.js out/test/shared/ovmPaths.node.js out/test/shared/processOutput.node.js out/test/shared/processTermination.node.js out/test/shared/ibsrvDataLock.node.js out/test/shared/channelLocation.node.js out/test/shared/windowRegistry.node.js out/test/utils/shellArgvRoundtrip.node.js out/test/shared/executableLookup.node.js out/test/testing/mutatosRun.node.js out/test/testing/mutatosSources.node.js out/test/testing/mutatosReport.node.js out/test/spreadsheet/spreadsheetHtml.node.js out/test/features/odata.node.js out/test/metadata/erTheme.node.js out/test/metadata/jarJavaVersion.node.js out/test/testing/yaxunitReleases.node.js out/test/metadata/erExport.node.js",
     "package": "vsce package",
     "changelog": "git-cliff --config cliff.toml --output CHANGELOG.md",
     "docs:dev": "vitepress dev docs",

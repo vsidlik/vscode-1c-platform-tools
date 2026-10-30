@@ -10,6 +10,7 @@ import {
 	edtStartDataDirectory,
 	edtVersionFromDirectory,
 	findEdtInstallations,
+	edtInstallationsForChoice,
 	pickEdtInstallation,
 	productsRootFromPreferences,
 } from '../../shared/edtLocator';
@@ -93,6 +94,14 @@ suite('поиск установленной EDT', () => {
 		assert.strictEqual(pickEdtInstallation(found, '2025')?.version, '2025.2');
 		assert.strictEqual(pickEdtInstallation(found, '2025.2')?.version, '2025.2');
 		assert.strictEqual(pickEdtInstallation(found, '2019'), undefined);
+		assert.deepStrictEqual(
+			edtInstallationsForChoice(found, '2025.2').map((item) => item.version),
+			['2025.2', '2026.1']
+		);
+		assert.deepStrictEqual(
+			edtInstallationsForChoice(found, '').map((item) => item.version),
+			['2026.1', '2025.2']
+		);
 	});
 
 	test('каталоги данных 1C:EDT Start и компонентов установщика зависят от системы', () => {

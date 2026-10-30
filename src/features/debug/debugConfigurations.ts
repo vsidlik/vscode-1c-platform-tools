@@ -15,6 +15,7 @@ import { projectPlatformRoots } from '../../shared/platformSettings';
 import { CONVENTIONAL_PATHS, projectPaths, type ProjectPaths } from '../../shared/projectPaths';
 import { BUILD_SUBDIRS } from '../../shared/pathDefaults';
 import { currentRoot, deepestProject, projectOf, runWithProject } from '../../shared/workspaceProjects';
+import { readLaunchConfigurations } from '../../shared/launchConfigurations';
 import { ensureWorkspaceTrusted } from '../../shared/workspaceTrust';
 
 const launchConfig: vscode.DebugConfiguration = {
@@ -350,13 +351,10 @@ export class OnecDebugConfigurationProvoider implements vscode.DebugConfiguratio
 	}
 }
 
-export function getOnecConfigurations(): vscode.DebugConfiguration[] {
-	const config = vscode.workspace.getConfiguration('launch');
-	const configurations = config.get<vscode.DebugConfiguration[]>('configurations');
-	if (configurations === undefined) {
-		return [];
-	}
-	return configurations.filter((c) => c.type === DEBUG_TYPE);
+export function getOnecConfigurations(folder?: vscode.WorkspaceFolder): vscode.DebugConfiguration[] {
+	const inspected = vscode.workspace.getConfiguration('launch', folder?.uri)
+		.inspect<vscode.DebugConfiguration[]>('configurations');
+	return readLaunchConfigurations(inspected).filter((configuration) => configuration.type === DEBUG_TYPE);
 }
 
 export function watchTargetTypesChanged(context: vscode.ExtensionContext): void {
@@ -366,7 +364,7 @@ export function watchTargetTypesChanged(context: vscode.ExtensionContext): void 
 				vscode.debug.activeDebugSession !== undefined &&
 				event.affectsConfiguration('launch.configurations')
 			) {
-				const onecConfigs = getOnecConfigurations();
+				const onecConfigs = getOnecConfigurations(vscode.debug.activeDebugSession.workspaceFolder);
 				const debugSessionConfig = vscode.debug.activeDebugSession.configuration;
 				const sessionConfigs = onecConfigs.filter((c) => c.name === debugSessionConfig.name);
 				if (sessionConfigs.length === 1) {

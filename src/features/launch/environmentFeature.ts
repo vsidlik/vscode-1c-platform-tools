@@ -12,6 +12,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as fsSync from 'node:fs';
+import { showWorkspaceRequired } from '../../shared/configurationWriteTarget';
 import { VRunnerManager } from '../../shared/vrunnerManager';
 import {
 	BASE_DOTENV_FILE,
@@ -57,7 +58,7 @@ async function ensureEnvironmentFile(root: string, fileName: string): Promise<bo
 async function openEnvironmentFile(vrunner: VRunnerManager): Promise<void> {
 	const root = vrunner.getWorkspaceRoot();
 	if (!root) {
-		vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+		showWorkspaceRequired();
 		return;
 	}
 	const own = ownEnvironmentFiles(vrunner.getActiveEnvironmentId());
@@ -75,7 +76,7 @@ async function openEnvironmentFile(vrunner: VRunnerManager): Promise<void> {
 async function createEnvironment(vrunner: VRunnerManager, refresh: () => void): Promise<void> {
 	const root = vrunner.getWorkspaceRoot();
 	if (!root) {
-		vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+		showWorkspaceRequired();
 		return;
 	}
 	const input = await vscode.window.showInputBox({
@@ -163,7 +164,7 @@ async function selectEnvironment(vrunner: VRunnerManager, refresh: () => void): 
 
 	const root = vrunner.getWorkspaceRoot();
 	if (!root) {
-		vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+		showWorkspaceRequired();
 		return;
 	}
 	const activeId = vrunner.getActiveEnvironmentId();

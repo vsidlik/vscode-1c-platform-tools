@@ -9,8 +9,8 @@ import { notifyQuiet } from '../../shared/notify';
 import { DEFAULT_TESTING } from '../../shared/pathDefaults';
 import { resolveOnescriptTestsPath } from './onescriptTestsPath';
 import type { StructuredCommandResult } from '../../shared/commandExecutionTypes';
+import { configurationWriteTarget } from '../../shared/configurationWriteTarget';
 import { projectConfiguration } from '../../shared/projectConfiguration';
-import { workspaceFolderOf } from '../../shared/workspaceProjects';
 
 const log = logger.scope('testing');
 
@@ -72,10 +72,9 @@ export function registerConfigureTestingCommand(vrunner: VRunnerManager): vscode
 
 		const workspaceRoot = vrunner.getWorkspaceRoot();
 		const config = projectConfiguration(workspaceRoot);
-		const target =
-			workspaceRoot && (vscode.workspace.workspaceFolders?.length ?? 0) > 1 && workspaceFolderOf(workspaceRoot)
-				? vscode.ConfigurationTarget.WorkspaceFolder
-				: vscode.ConfigurationTarget.Workspace;
+		const target = workspaceRoot
+			? configurationWriteTarget(workspaceRoot)
+			: vscode.ConfigurationTarget.Workspace;
 		const featuresPath = config.get<string>('test.path.features', DEFAULT_TESTING.featuresPath);
 		const onescriptPath = resolveOnescriptTestsPath(workspaceRoot);
 		const paths = workspaceRoot ? await projectPaths(workspaceRoot) : undefined;
