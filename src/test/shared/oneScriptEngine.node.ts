@@ -40,6 +40,7 @@ describe('версия движка', () => {
 		assert.equal(machineEngineFits(engine('2.2.1'), '2.0.0'), true, 'ovm use 2.2.1 при ВерсияСреды 2.0.0');
 		assert.equal(machineEngineFits(engine('2.0.0'), '2.0.0'), true);
 		assert.equal(machineEngineFits(engine('2.2.1'), '1.9.2'), true, 'opm сравнивает только числа');
+		assert.equal(machineEngineFits(engine('2.0.0'), '1.0.20'), true, 'ВерсияСреды vanessa-add');
 		assert.equal(machineEngineFits(engine('1.9.2'), '2.0.0'), false);
 		assert.equal(machineEngineFits(engine('2.0.0'), undefined), true, 'без ВерсияСреды проверять нечего');
 		assert.equal(machineEngineFits(undefined, '2.0.0'), true, 'версия движка неизвестна');

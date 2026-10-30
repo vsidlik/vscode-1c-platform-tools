@@ -5,7 +5,7 @@ import { VRunnerManager } from '../../shared/vrunnerManager';
 import { runCancellableCommand, CancellableProcessResult } from '../../shared/cancellableProcess';
 import { logger } from '../../shared/logger';
 import { EdtCommandError } from '../edt/edtRunner';
-import { TestFrameworkAdapter, RunUnit, AdapterRunPlan, AdapterRunStep, FileTreeLocation } from './frameworkAdapter';
+import { TestFrameworkAdapter, RunUnit, AdapterRunPlan, AdapterRunStep, FileTreeLocation, type TestFrameworkId } from './frameworkAdapter';
 import { DiscoveredFile } from './parsers/parserTypes';
 import { frameworkRootId, fileItemId } from './testItemIds';
 import {
@@ -49,6 +49,16 @@ const ONESCRIPT_RUNNER_CONTEXT = '1c-platform-tools.test.onescriptRunner';
  */
 function setOneScriptRunnerContext(runner: OneScriptRunner | undefined): void {
 	void vscode.commands.executeCommand('setContext', ONESCRIPT_RUNNER_CONTEXT, runner);
+}
+
+/**
+ * Тег фреймворка узла. VS Code не передаёт теги от родителя детям, поэтому тег
+ * стоит на каждом узле: по нему профиль запуска фреймворка есть на всём его дереве.
+ *
+ * @param adapterId - Фреймворк узла
+ */
+function frameworkTag(adapterId: TestFrameworkId): vscode.TestTag {
+	return new vscode.TestTag(frameworkRootId(adapterId));
 }
 
 /**
@@ -258,7 +268,8 @@ export class TestingController implements vscode.Disposable {
 			'Запуск по тегам OneUnit',
 			vscode.TestRunProfileKind.Run,
 			(request, token) => this.runHandler(request, token, (units, root) => this.selectByTags(units, root)),
-			false
+			false,
+			frameworkTag('onescript')
 		);
 
 		this.disposables.push(
@@ -656,6 +667,7 @@ export class TestingController implements vscode.Disposable {
 
 		if (!entry) {
 			const item = this.controller.createTestItem(id, label, uri);
+			item.tags = [frameworkTag(adapter.id)];
 			// Дети (кейсы) подгружаются лениво в resolveFile
 			item.canResolveChildren = true;
 			parent.children.add(item);
@@ -727,9 +739,7 @@ export class TestingController implements vscode.Disposable {
 				child.range = new vscode.Range(descriptor.line, 0, descriptor.line, 0);
 				// Префикс ключом файла: кейсы держатся под своим файлом и в плоском списке
 				child.sortText = caseSortKey(fileKey, descriptor.sortText);
-				if (descriptor.tags) {
-					child.tags = descriptor.tags.map((tag) => new vscode.TestTag(tag));
-				}
+				child.tags = [frameworkTag(entry.adapter.id), ...(descriptor.tags ?? []).map((tag) => new vscode.TestTag(tag))];
 				// Параметризованный кейс: запоминаем имя процедуры для точечного запуска
 				if (descriptor.methodName && descriptor.methodName !== descriptor.name) {
 					this.caseMethodNames.set(descriptor.id, descriptor.methodName);
@@ -828,6 +838,7 @@ export class TestingController implements vscode.Disposable {
 			if (!dirItem) {
 				const dirFsPath = directoryNodeFsPath(fileUri.fsPath, segments.length, i);
 				dirItem = this.controller.createTestItem(id, segments[i], vscode.Uri.file(dirFsPath));
+				dirItem.tags = [frameworkTag(adapter.id)];
 				// Ключ сортировки по пути: каталог идёт перед файлами того же
 				// родителя, а его поддерево — единым блоком в плоском списке
 				dirItem.sortText = directorySortKey(segments.slice(0, i + 1));
@@ -846,7 +857,7 @@ export class TestingController implements vscode.Disposable {
 		let root = this.controller.items.get(id);
 		if (!root) {
 			root = this.controller.createTestItem(id, adapter.label);
-			root.tags = [new vscode.TestTag(id)];
+			root.tags = [frameworkTag(adapter.id)];
 			root.description = this.launchDescription(adapter);
 			this.controller.items.add(root);
 		}
@@ -1233,10 +1244,13 @@ export class TestingController implements vscode.Disposable {
 			void vscode.window.showWarningMessage('Теги отбирает OneUnit, а в проекте выбран 1testrunner: настройка test.onescriptRunner.');
 			return undefined;
 		}
+		// Тег фреймворка стоит на каждом узле ради профиля, OneUnit о нём не знает
+		const own = frameworkRootId('onescript');
 		const tagsOf = (unit: RequestUnit) =>
 			this.leafItems(unit.entry.item)
 				.filter((leaf) => unit.caseNames === undefined || unit.caseNames.includes(this.caseMethodNames.get(leaf.id) ?? leaf.label))
-				.flatMap((leaf) => leaf.tags.map((tag) => tag.id));
+				.flatMap((leaf) => leaf.tags.map((tag) => tag.id))
+				.filter((tag) => tag !== own);
 		const available = [...new Set(oneScript.flatMap(tagsOf))].sort((left, right) => left.localeCompare(right));
 		if (available.length === 0) {
 			void vscode.window.showInformationMessage('У выбранных тестов нет тегов &Тег.');
