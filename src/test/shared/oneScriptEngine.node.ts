@@ -15,7 +15,7 @@ import {
 	parseEngineVersion,
 	pickEngineFor,
 } from '../../shared/oneScriptEngine';
-import { getOvmBaseDir } from '../../shared/ovmPaths';
+import { engineFileKey, getOvmBaseDir, getOvmCurrentTarget } from '../../shared/ovmPaths';
 
 describe('версия движка', () => {
 	test('из вывода движков 2.x и 1.x, из ВерсияСреды и имени каталога', () => {
@@ -101,5 +101,46 @@ describe('установки OVM', () => {
 	test('каталог OVM из OVM_INSTALL_PATH, как у самого OVM', () => {
 		assert.equal(getOvmBaseDir({ OVM_INSTALL_PATH: base }), base);
 		assert.notEqual(getOvmBaseDir({}), base);
+	});
+});
+
+describe('current OVM', () => {
+	let base: string;
+	let saved: string | undefined;
+	const binary = process.platform === 'win32' ? 'oscript.exe' : 'oscript';
+
+	before(() => {
+		base = fs.mkdtempSync(path.join(os.tmpdir(), 'ovm-current-'));
+		for (const name of ['2.0.0', '2.2.1']) {
+			fs.mkdirSync(path.join(base, name, 'bin'), { recursive: true });
+			fs.writeFileSync(path.join(base, name, 'bin', binary), '');
+		}
+		saved = process.env.OVM_INSTALL_PATH;
+		process.env.OVM_INSTALL_PATH = base;
+	});
+
+	after(() => {
+		if (saved === undefined) {
+			delete process.env.OVM_INSTALL_PATH;
+		} else {
+			process.env.OVM_INSTALL_PATH = saved;
+		}
+		fs.rmSync(base, { recursive: true, force: true });
+	});
+
+	test('после ovm use у current другая цель, движок из current раскрывается в каталог версии', () => {
+		const link = path.join(base, 'current');
+		const real = (name: string) => fs.realpathSync(path.join(base, name));
+		assert.equal(getOvmCurrentTarget(), '', 'без current цели нет');
+
+		fs.symlinkSync(path.join(base, '2.2.1'), link, 'junction');
+		assert.equal(getOvmCurrentTarget(), real('2.2.1'));
+		assert.equal(engineFileKey(path.join(link, 'bin', binary)), path.join(real('2.2.1'), 'bin', binary));
+
+		fs.rmSync(link);
+		fs.symlinkSync(path.join(base, '2.0.0'), link, 'junction');
+		assert.equal(getOvmCurrentTarget(), real('2.0.0'), 'ovm use 2.0.0');
+		assert.equal(engineFileKey(path.join(link, 'bin', binary)), path.join(real('2.0.0'), 'bin', binary));
+		assert.equal(engineFileKey('oscript'), 'oscript', 'имя для PATH как есть');
 	});
 });

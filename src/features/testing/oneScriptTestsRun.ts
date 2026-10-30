@@ -1,5 +1,5 @@
 /**
- * Прогон тестов OneScript проекта задачей VS Code.
+ * Прогон тестов OneScript проекта: человеку задачей VS Code, агенту процессом без окон.
  *
  * Раннер, каталог тестов и каталог отчётов те же, что у панели тестирования,
  * движок — движок проекта. OneUnit ищет наборы и во вложенных каталогах (`-r`),
@@ -11,6 +11,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { runCancellableCommand } from '../../shared/cancellableProcess';
 import type { CommandExecutionOptions, StructuredCommandResult } from '../../shared/commandExecutionTypes';
 import { logger } from '../../shared/logger';
 import { notifyQuiet, notifyQuietFailure } from '../../shared/notify';
@@ -82,20 +83,23 @@ export async function runOneScriptTests(
 	const startedAt = Date.now();
 	log.info(`${title}: ${runner.kind}, каталог ${testsDir}`);
 
-	const exitCode = await new Promise<number>((resolve) => {
-		const task = createVRunnerTask({
-			name: title,
-			command: buildProcessCommand(runner.file, call.args),
-			cwd: root,
-			env,
-			root,
-			exitCallback: resolve,
+	const command = buildProcessCommand(runner.file, call.args);
+	let exitCode: number;
+	let output = '';
+	if (opts?.wait === true) {
+		// Агенту без задачи: уже идущая задача с тем же именем спросила бы человека, какую остановить
+		const result = await runCancellableCommand(command, { cwd: root, env });
+		exitCode = result.exitCode;
+		output = `${result.stdout}${result.stderr}`.trim();
+	} else {
+		exitCode = await new Promise<number>((resolve) => {
+			const task = createVRunnerTask({ name: title, command, cwd: root, env, root, exitCallback: resolve });
+			vscode.tasks.executeTask(task).then(undefined, (error: Error) => {
+				log.error(`Задача тестов OneScript не запустилась: ${error.message}`);
+				resolve(1);
+			});
 		});
-		vscode.tasks.executeTask(task).then(undefined, (error: Error) => {
-			log.error(`Задача тестов OneScript не запустилась: ${error.message}`);
-			resolve(1);
-		});
-	});
+	}
 
 	const stats = await readRunSummary(call.report, startedAt);
 	const green = exitCode === 0 && stats !== undefined && stats.failed === 0 && stats.errors === 0;
@@ -110,7 +114,7 @@ export async function runOneScriptTests(
 	return {
 		success: green,
 		exitCode,
-		stdout: stats ? formatRunSummary(stats) : '',
+		stdout: stats ? formatRunSummary(stats) : output,
 		stderr: stats ? '' : `Отчёт прогона не найден (ожидался: ${call.report}); код возврата ${exitCode}.`,
 		artifact: stats ? call.report : undefined,
 		...(stats ? { tests: stats } : {}),

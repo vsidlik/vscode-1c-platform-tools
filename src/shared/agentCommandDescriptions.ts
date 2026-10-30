@@ -300,7 +300,7 @@ export const AGENT_COMMAND_DESCRIPTIONS: Record<string, AgentCommandDescription>
 		category: ONESCRIPT,
 	},
 	'1c-platform-tools.package.install': {
-		title: 'Установить собранный пакет OneScript (.ospx) в движок проекта (opm install -f); без файла берётся пакет версии из packagedef или самый новый из каталога сборки',
+		title: 'Установить собранный пакет OneScript (.ospx) в движок проекта (opm install -f): пакет версии из packagedef, иначе самый новый из каталога сборки; путь к пакету возвращается в artifact',
 		category: ONESCRIPT,
 	},
 

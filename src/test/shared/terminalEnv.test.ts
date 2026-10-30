@@ -32,6 +32,15 @@ suite('окружение новых терминалов', () => {
 		]);
 	});
 
+	test('после перезагрузки окна первый вызов без движка снимает сохранённую правку', () => {
+		const { calls, collection } = recordingCollection();
+		initTerminalEnv(collection);
+
+		setTerminalOscriptBinDir(undefined);
+
+		assert.deepStrictEqual(calls, ['clear']);
+	});
+
 	test('тот же движок второй раз не пишется, без движка правка снимается', () => {
 		const { calls, collection } = recordingCollection();
 		initTerminalEnv(collection);

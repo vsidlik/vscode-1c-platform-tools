@@ -39,10 +39,12 @@ import { dockerCommandRun, dockerContainerName } from './dockerRun';
 import { runCancellableCommand, CancellableProcessResult, type CommandRun } from './cancellableProcess';
 import { DEFAULT_PATHS, DEFAULT_VRUNNER, DEFAULT_ENV } from './pathDefaults';
 import {
+	engineFileKey,
 	envName,
 	getEngineBinaryCandidates,
 	getOvmBaseDir,
 	getOvmBinDir,
+	getOvmCurrentTarget,
 	getOvmRootDir,
 	getOpmBinaryCandidates,
 	getOpmScriptPath,
@@ -433,9 +435,13 @@ export class VRunnerManager {
 		await this.refreshOneScriptResolution();
 	}
 
-	/** Ключ найденного движка: проекты с одинаковым выбором делят один движок. */
+	/**
+	 * Ключ найденного движка: проекты с одинаковым выбором делят один движок.
+	 * Цель `current` OVM тоже в ключе: после `ovm use` движок машины ищется
+	 * заново и снова сверяется с ВерсияСреды.
+	 */
 	private engineKey(request: EngineRequest = this.engineRequest()): string {
-		return JSON.stringify([request.path, request.version, request.required ?? '']);
+		return JSON.stringify([request.path, request.version, request.required ?? '', getOvmCurrentTarget()]);
 	}
 
 	/** Движок, найденный для выбора проекта вызова. */
@@ -842,7 +848,8 @@ export class VRunnerManager {
 		if (oscript === undefined) {
 			return Promise.resolve(undefined);
 		}
-		const known = this.engineVersions.get(oscript);
+		const key = engineFileKey(oscript);
+		const known = this.engineVersions.get(key);
 		if (known) {
 			return known;
 		}
@@ -862,11 +869,11 @@ export class VRunnerManager {
 		}).then((version) => {
 			// Не ответивший движок спрашивается снова: его могли переустановить
 			if (version === undefined) {
-				this.engineVersions.delete(oscript);
+				this.engineVersions.delete(key);
 			}
 			return version;
 		});
-		this.engineVersions.set(oscript, reading);
+		this.engineVersions.set(key, reading);
 		return reading;
 	}
 
@@ -908,7 +915,7 @@ export class VRunnerManager {
 		if (engine?.problem === undefined) {
 			return;
 		}
-		const key = `${projectRootKey(this.getEffectiveRoot() ?? '')}|${engine.oscript}`;
+		const key = `${projectRootKey(this.getEffectiveRoot() ?? '')}|${engineFileKey(engine.oscript)}`;
 		if (this.warnedEngines.has(key)) {
 			return;
 		}

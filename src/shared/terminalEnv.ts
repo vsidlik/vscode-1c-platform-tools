@@ -25,8 +25,12 @@ const log = logger.scope('vrunner');
 /** Коллекция окружения расширения, доступна после {@link initTerminalEnv}. */
 let collection: vscode.EnvironmentVariableCollection | undefined = undefined;
 
-/** Каталог, добавленный в PATH последним: чтобы не писать в журнал одно и то же. */
-let appliedBinDir: string | undefined = undefined;
+/**
+ * Каталог, добавленный в PATH последним: чтобы не писать в журнал одно и то же.
+ * null — после подключения ничего не применялось: коллекция хранится между
+ * сеансами, и первый вызов её обязательно обновляет или очищает.
+ */
+let appliedBinDir: string | undefined | null = null;
 
 /** Правка и при запуске терминала, и после файлов запуска оболочки. */
 const MUTATOR_OPTIONS: vscode.EnvironmentVariableMutatorOptions = { applyAtProcessCreation: true, applyAtShellIntegration: true };
@@ -38,6 +42,7 @@ const MUTATOR_OPTIONS: vscode.EnvironmentVariableMutatorOptions = { applyAtProce
  */
 export function initTerminalEnv(target: vscode.EnvironmentVariableCollection): void {
 	collection = target;
+	appliedBinDir = null;
 	collection.description = 'Движок OneScript проекта: PATH, OVM_OSCRIPTBIN, OSCRIPTBIN';
 }
 

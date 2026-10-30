@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
@@ -38,6 +39,38 @@ export function getOvmBaseDir(env: NodeJS.ProcessEnv = process.env): string {
  */
 export function getOvmRootDir(): string {
 	return path.join(getOvmBaseDir(), OVM_CURRENT);
+}
+
+/**
+ * Каталог установки, на который сейчас указывает `current`: `ovm use` меняет
+ * его в обход расширения.
+ *
+ * @returns Настоящий путь каталога или пустая строка, если `current` нет
+ */
+export function getOvmCurrentTarget(): string {
+	try {
+		return fs.realpathSync(getOvmRootDir());
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * Настоящий путь исполняемого файла движка: у движка из `current` после
+ * `ovm use` за тем же путём другая версия.
+ *
+ * @param oscript - Абсолютный путь или имя для PATH
+ * @returns Путь без ссылок; имя для PATH и ненайденный файл как есть
+ */
+export function engineFileKey(oscript: string): string {
+	if (!path.isAbsolute(oscript)) {
+		return oscript;
+	}
+	try {
+		return fs.realpathSync(oscript);
+	} catch {
+		return oscript;
+	}
 }
 
 /**
