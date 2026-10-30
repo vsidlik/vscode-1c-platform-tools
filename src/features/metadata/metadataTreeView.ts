@@ -20,7 +20,6 @@ import { runMdSparrowParamsRead, supportEnabled } from './mdSparrowParams';
 import { mdSparrowSchemaFlagFromConfigurationXml } from './mdSparrowSchemaVersion';
 import { offerGithubTokenOnRateLimit } from '../../shared/githubToken';
 import { configurationScope, type ConfigurationScope } from '../../shared/activeConfiguration';
-import { detectProjectKind } from '../../shared/projectKind';
 import { currentRoot, outsideProject, sameProjectRoot } from '../../shared/workspaceProjects';
 import { METADATA_EXPANDED_SOURCES_STATE, projectMemento } from '../../shared/projectState';
 import { ADOPTED_HINT, SUPPORT_HINTS, adoptedIcon, initAdoptedIcons, isAdopted, supportIcon } from './objectBelonging';
@@ -303,6 +302,18 @@ export class MetadataSourceNoteTreeItem extends vscode.TreeItem {
 		);
 		this.contextValue = 'metadataSourceNote';
 		this.iconPath = new vscode.ThemeIcon('warning');
+	}
+}
+
+/** Пояснение без ошибки: те же копирование и журнал, что у сообщения о сбое. */
+export class MetadataNoticeTreeItem extends vscode.TreeItem {
+	constructor(
+		/** Текст пояснения: его копирует команда строки. */
+		public readonly noticeText: string
+	) {
+		super(noticeText, vscode.TreeItemCollapsibleState.None);
+		this.contextValue = 'metadataNotice';
+		this.iconPath = new vscode.ThemeIcon('info');
 	}
 }
 
@@ -1498,9 +1509,6 @@ export class MetadataTreeDataProvider implements vscode.TreeDataProvider<vscode.
 	private _contentConfigurationDir: string | undefined;
 	/** Расширения, чей состав прочитан в дерево. Пусто, пока дерево ещё не читали. */
 	private _contentExtensionDirs: readonly string[] | undefined;
-	/** Дерево показывает проект OneScript: метаданных 1С в нём нет. */
-	private _showsOneScript = false;
-
 	constructor(private readonly _context: vscode.ExtensionContext) {
 		initAdoptedIcons(path.join(_context.globalStorageUri.fsPath, 'metadata-tree-icons'));
 	}
@@ -1516,18 +1524,17 @@ export class MetadataTreeDataProvider implements vscode.TreeDataProvider<vscode.
 		await refreshing;
 	}
 
-	/** Раскладка проекта изменилась: дерево перечитывается, когда сменились конфигурация, расширения или вид проекта. */
+	/** Раскладка проекта изменилась: дерево перечитывается, когда сменились конфигурация или расширения. */
 	async syncWithProjectLayout(): Promise<void> {
 		const root = this._workspaceRoot;
 		if (!root) {
 			return;
 		}
 		try {
-			const [scope, kind] = await Promise.all([configurationScope(root), detectProjectKind(root)]);
+			const scope = await configurationScope(root);
 			if (
 				scope.configuration?.dir !== this._contentConfigurationDir
 				|| !sameExtensionDirs(this._contentExtensionDirs ?? [], extensionDirsOf(scope))
-				|| (kind === 'onescript') !== this._showsOneScript
 			) {
 				await this.refresh();
 			}
@@ -1672,22 +1679,8 @@ export class MetadataTreeDataProvider implements vscode.TreeDataProvider<vscode.
 
 		const root = this.selectedRoot();
 		this._workspaceRoot = root;
-		this._showsOneScript = false;
 		if (!root) {
 			this._notice = 'Нет открытой папки workspace';
-			this._onDidChange.fire(undefined);
-			return;
-		}
-
-		const kind = await detectProjectKind(root).catch(() => undefined);
-		if (generation !== this._refreshGeneration) {
-			return;
-		}
-		if (kind === 'onescript') {
-			this._showsOneScript = true;
-			this._contentConfigurationDir = undefined;
-			this._contentExtensionDirs = undefined;
-			this._notice = 'В проекте OneScript нет метаданных 1С';
 			this._onDidChange.fire(undefined);
 			return;
 		}
@@ -1702,6 +1695,9 @@ export class MetadataTreeDataProvider implements vscode.TreeDataProvider<vscode.
 			this._contentExtensionDirs = extensionDirsOf(scope);
 			this._dto = dto;
 			this.rebuildItemCache(root, dto);
+			if (this._sourceItems.length === 0) {
+				this._notice = 'Исходный код не найден';
+			}
 			// Панель дерева показывает проверку выгрузки только конфигуратору: у проекта EDT своя проверка
 			const main = this._dto.sources.find((source) => source.kind === 'main');
 			void vscode.commands.executeCommand(
@@ -1980,9 +1976,7 @@ export class MetadataTreeDataProvider implements vscode.TreeDataProvider<vscode.
 		}
 		if (!element) {
 			if (this._notice) {
-				const notice = new vscode.TreeItem(this._notice, vscode.TreeItemCollapsibleState.None);
-				notice.iconPath = new vscode.ThemeIcon('info');
-				return [notice];
+				return [new MetadataNoticeTreeItem(this._notice)];
 			}
 			if (this._lastError) {
 				return [new MetadataErrorTreeItem(this._lastError.trim())];

@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import { VRunnerManager, type VRunnerExecutionResult } from '../shared/vrunnerManager';
 import type { VRunnerIntent } from '../shared/vrunnerCli';
 import { enclosingEdtProject, resolveProjectLayout, rootOfDirectory, type SourceFormat } from '../shared/projectLayout';
+import { showWorkspaceRequired } from '../shared/configurationWriteTarget';
 import { logger } from '../shared/logger';
 import { runWithHooks, runHooksAroundTerminalTask } from '../shared/commandHooks';
 import {
@@ -203,14 +204,18 @@ export abstract class BaseCommand {
 	}
 
 	/**
-	 * Проверяет наличие workspace и показывает ошибку, если его нет
-	 * @returns workspaceRoot или undefined, если workspace не открыт
+	 * Проверяет корень проекта.
+	 *
+	 * Пустое окно просит открыть папку. Окно с папками без проекта молчит:
+	 * панели проекта без packagedef не активны.
+	 *
+	 * @returns Корень проекта или undefined, если его нет
 	 */
 	protected ensureWorkspace(): string | undefined {
 		const workspaceRoot = this.vrunner.getWorkspaceRoot();
 		if (!workspaceRoot) {
-			log.warn('Команда вызвана без открытой рабочей области (workspaceFolders пуст или отсутствует)');
-			vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+			log.warn('Команда вызвана без корня проекта');
+			showWorkspaceRequired();
 		}
 		return workspaceRoot;
 	}

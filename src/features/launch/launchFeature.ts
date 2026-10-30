@@ -24,6 +24,8 @@ import {
 	baseSettingsFileName,
 } from '../../shared/envProfiles';
 import { logger } from '../../shared/logger';
+import { showWorkspaceRequired } from '../../shared/configurationWriteTarget';
+import { watchGitHead } from '../../shared/gitHeadWatch';
 import { notifyQuiet } from '../../shared/notify';
 import { ENV_DEFAULTS, AUTUMN_DEFAULTS } from '../serviceFiles/envDefaults';
 import { buildEnvJsonWithSections } from '../serviceFiles/envJsonBuilder';
@@ -172,7 +174,7 @@ async function buildNewProfileContent(workspaceRoot: string, schema: SettingsSch
 async function createProfile(vrunner: VRunnerManager, refresh: () => void): Promise<void> {
 	const workspaceRoot = vrunner.getWorkspaceRoot();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+		showWorkspaceRequired();
 		return;
 	}
 	if (!vrunner.usesVanessaRunner()) {
@@ -612,7 +614,7 @@ export function registerLaunchFeature(
 			}
 			const workspaceRoot = vrunner.getWorkspaceRoot();
 			if (!workspaceRoot) {
-				vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+				showWorkspaceRequired();
 				return;
 			}
 			await vrunner.getVRunnerVersion();
@@ -741,7 +743,7 @@ export function registerLaunchFeature(
 
 /**
  * Следит за профилями, окружениями и служебными файлами проекта: создание и удаление
- * обновляют строку состояния и дерево, `.git/HEAD` обновляет значения с `${gitBranch}`.
+ * обновляют строку состояния и дерево, `HEAD` репозитория обновляет значения с `${gitBranch}`.
  *
  * @param root - Корень проекта
  * @param vrunner - Менеджер vrunner
@@ -757,7 +759,7 @@ function watchProjectFiles(
 	const watcher = vscode.workspace.createFileSystemWatcher(
 		new vscode.RelativePattern(
 			root,
-			'{env*.json,autumn-properties*.json,.env,.env.*,.gitignore,.gitattributes,tools/**,.1cpt/**,.git/HEAD}'
+			'{env*.json,autumn-properties*.json,.env,.env.*,.gitignore,.gitattributes,tools/**,.1cpt/**}'
 		)
 	);
 	const onFsChange = () => {
@@ -779,6 +781,8 @@ function watchProjectFiles(
 		}
 		onFsChange();
 	});
+	// HEAD worktree и подпроекта лежит не в корне проекта
+	const headWatch = watchGitHead(root, onFsChange);
 	// Предложение про .gitignore — только при появлении файла в открытом окне:
 	// для давно существующего файла тост при каждом запуске был бы навязчивым
 	const onFsCreate = (uri: vscode.Uri) => {
@@ -789,6 +793,7 @@ function watchProjectFiles(
 	};
 	return vscode.Disposable.from(
 		watcher,
+		headWatch,
 		watcher.onDidCreate(onFsCreate),
 		watcher.onDidChange(onFsChange),
 		watcher.onDidDelete(() => void onFsDelete())

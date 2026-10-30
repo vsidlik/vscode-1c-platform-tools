@@ -22,6 +22,7 @@ import { VRunnerManager } from '../shared/vrunnerManager';
 import type { CommandExecutionOptions, StructuredCommandResult } from '../shared/commandExecutionTypes';
 import { isAgentOptions, agentInteractiveError, uiOnlyHandler } from '../shared/agentGate';
 import { askGithubToken, forgetGithubToken } from '../shared/githubToken';
+import { showWorkspaceRequired } from '../shared/configurationWriteTarget';
 import { withWorkspaceTrust } from '../shared/workspaceTrust';
 import { inCurrentProject, inProjectOf } from './projectScope';
 
@@ -566,7 +567,7 @@ export function registerCommands(
 		const workspaceRoot = vrunnerManager.getWorkspaceRoot();
 		if (!workspaceRoot) {
 			log.warn('Команда env.edit вызвана без открытой рабочей области');
-			vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+			showWorkspaceRequired();
 			return;
 		}
 		const envPath = vscode.Uri.file(path.join(workspaceRoot, 'env.json'));

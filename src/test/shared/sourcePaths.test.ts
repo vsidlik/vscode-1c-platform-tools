@@ -24,12 +24,15 @@ suite('каталоги для md-sparrow', () => {
 		assert.deepStrictEqual(dirs.erfDirs, ['src/erf/ОстаткиТоваров', 'src/erf/ОтчётПоОстаткам']);
 	});
 
-	test('проект EDT: конфигурация и расширения проектами, внешние объекты EDT не передаются', async () => {
+	test('проект EDT: конфигурация, расширения и внешние объекты проектами', async () => {
 		const dirs = await detectedSourceDirs(EDT_WORKSPACE);
 
 		assert.strictEqual(dirs.cf, 'ssl31');
 		assert.deepStrictEqual(dirs.cfeDirs, ['ssl31._ДемоРасширение', 'учёт.РасширениеУчёта', 'tests/cfe/yaxunit-test']);
-		assert.deepStrictEqual(dirs.epfDirs, []);
-		assert.deepStrictEqual(dirs.erfDirs, []);
+		assert.deepStrictEqual(dirs.epfDirs, [
+			'dp/src/ExternalDataProcessors/ТестоваяВнешняяОбработка',
+			'tests/epf/Тесты_Арифметика/src/ExternalDataProcessors/Тесты_Арифметика',
+		]);
+		assert.deepStrictEqual(dirs.erfDirs, ['dp/src/ExternalReports/ТестовыйВнешнийОтчет']);
 	});
 });

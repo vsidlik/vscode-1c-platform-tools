@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import { readGitBranchDirName } from '../../shared/gitHead';
+import { gitHeadFile, readGitBranchDirName } from '../../shared/gitHead';
 
 const roots: string[] = [];
 
@@ -45,6 +45,17 @@ describe('readGitBranchDirName', () => {
 		fs.writeFileSync(path.join(gitData, 'HEAD'), 'ref: refs/heads/hotfix/x\n');
 		fs.writeFileSync(path.join(root, '.git'), `gitdir: ${gitData}\n`);
 		assert.equal(readGitBranchDirName(root), 'hotfix-x');
+		assert.equal(gitHeadFile(root), path.join(gitData, 'HEAD'));
+	});
+
+	test('подпроект читает ветку репозитория выше по дереву', () => {
+		const root = makeRoot();
+		fs.mkdirSync(path.join(root, '.git'));
+		fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+		const child = path.join(root, 'src', 'lib');
+		fs.mkdirSync(child, { recursive: true });
+		assert.equal(readGitBranchDirName(child), 'main');
+		assert.equal(gitHeadFile(child), path.join(root, '.git', 'HEAD'));
 	});
 
 	test('относительный gitdir достраивается от корня', () => {

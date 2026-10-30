@@ -361,3 +361,24 @@ export function pickEdtInstallation(
 		(installation) => installation.version === requested || installation.version.startsWith(`${requested}.`)
 	);
 }
+
+/**
+ * Порядок установок в вопросе при создании проекта.
+ *
+ * Текущая настройка проекта идёт первой, чтобы её было видно. Пустая настройка
+ * оставляет порядок поиска: от старшей версии к младшей.
+ *
+ * @param installations - Найденные установки, уже отсортированные
+ * @param currentVersion - `edt.version` проекта
+ * @returns Тот же набор, текущая версия впереди
+ */
+export function edtInstallationsForChoice(
+	installations: readonly EdtInstallation[],
+	currentVersion: string
+): EdtInstallation[] {
+	const preferred = pickEdtInstallation(installations, currentVersion);
+	if (preferred === undefined) {
+		return [...installations];
+	}
+	return [preferred, ...installations.filter((installation) => installation.cli !== preferred.cli)];
+}

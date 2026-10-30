@@ -3,6 +3,8 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { BaseCommand } from './baseCommand';
 import { logger } from '../shared/logger';
+import { showWorkspaceRequired } from '../shared/configurationWriteTarget';
+import { readLaunchConfigurations } from '../shared/launchConfigurations';
 import { currentRoot, workspaceFolderOf } from '../shared/workspaceProjects';
 
 const log = logger.scope('tasks');
@@ -71,29 +73,22 @@ export class WorkspaceTasksCommands extends BaseCommand {
 	}
 
 	/**
-	 * Получает конфигурации запуска из launch.json
+	 * Конфигурации запуска папки текущего проекта.
 	 *
-	 * Читает файл `.vscode/launch.json` и возвращает массив конфигураций запуска.
-	 * Если файл не существует или содержит невалидный JSON, возвращает пустой массив.
+	 * Берёт их из настроек VS Code: комментарии в `launch.json` сохраняются,
+	 * секция `launch` файла `.code-workspace` видна вместе с файлом папки.
 	 *
 	 * @returns Промис, который разрешается массивом конфигураций запуска.
-	 *          Возвращает пустой массив, если workspace не открыт, файл не существует
-	 *          или произошла ошибка при чтении/парсинге файла
+	 *          Пустой массив, если папки проекта нет
 	 */
 	async getLaunchConfigurations(): Promise<LaunchConfiguration[]> {
 		const folder = this.workspaceFolder();
 		if (!folder) {
 			return [];
 		}
-
-		const launchPath = path.join(folder.uri.fsPath, '.vscode', 'launch.json');
-		try {
-			const content = await fs.readFile(launchPath, 'utf8');
-			const launchJson = JSON.parse(content);
-			return launchJson.configurations || [];
-		} catch {
-			return [];
-		}
+		const inspected = vscode.workspace.getConfiguration('launch', folder.uri)
+			.inspect<LaunchConfiguration[]>('configurations');
+		return readLaunchConfigurations(inspected);
 	}
 
 	/**
@@ -109,7 +104,7 @@ export class WorkspaceTasksCommands extends BaseCommand {
 	async runTask(taskLabel: string): Promise<void> {
 		if (!this.workspaceFolder()) {
 			log.warn('Команда runTask вызвана без открытой рабочей области');
-			vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+			showWorkspaceRequired();
 			return;
 		}
 
@@ -146,7 +141,7 @@ export class WorkspaceTasksCommands extends BaseCommand {
 		const folder = this.workspaceFolder();
 		if (!folder) {
 			log.warn('Команда runLaunchConfiguration вызвана без открытой рабочей области');
-			vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+			showWorkspaceRequired();
 			return;
 		}
 
@@ -182,7 +177,7 @@ export class WorkspaceTasksCommands extends BaseCommand {
 		const folder = this.workspaceFolder();
 		if (!folder) {
 			log.warn('Команда editTasks вызвана без открытой рабочей области');
-			vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+			showWorkspaceRequired();
 			return;
 		}
 
@@ -202,7 +197,7 @@ export class WorkspaceTasksCommands extends BaseCommand {
 		const folder = this.workspaceFolder();
 		if (!folder) {
 			log.warn('Команда editLaunchConfigurations вызвана без открытой рабочей области');
-			vscode.window.showErrorMessage('Откройте рабочую область для работы с проектом');
+			showWorkspaceRequired();
 			return;
 		}
 

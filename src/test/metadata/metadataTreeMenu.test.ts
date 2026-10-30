@@ -319,6 +319,7 @@ suite('контекстное меню дерева метаданных', () =>
 
 	test('у ошибки дерева копирование и журнал, у остальных узлов их нет', () => {
 		assert.deepStrictEqual(menuFor('metadataError'), ['Копировать текст ошибки', 'Показать журнал']);
+		assert.deepStrictEqual(menuFor('metadataNotice'), ['Копировать текст ошибки', 'Показать журнал']);
 		for (const viewItem of Object.values(NODES)) {
 			const menu = menuFor(viewItem);
 			assert.ok(!menu.includes('Копировать текст ошибки') && !menu.includes('Показать журнал'), `лишние пункты у ${viewItem}`);

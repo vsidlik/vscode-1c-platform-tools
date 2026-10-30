@@ -21,7 +21,7 @@ import type { MdSparrowRuntime } from './mdSparrowBootstrap';
 const log = logger.scope('md-sparrow');
 
 /** Версия формата кэша: меняется вместе с формой ответа. */
-const CACHE_FORMAT_VERSION = 3;
+const CACHE_FORMAT_VERSION = 4;
 
 /** Файлы, по которым меняется ответ: описания объектов, форм, схем компоновки и правил поддержки обеих раскладок. */
 const DESCRIPTOR_EXTENSIONS = new Set([
