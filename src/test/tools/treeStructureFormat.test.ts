@@ -4,6 +4,7 @@ import {
 	favoriteVisibleFor,
 	groupCommandsFor,
 	groupVisibleFor,
+	mergeFavorites,
 	treeTraitsOf,
 } from '../../features/tools/treeStructure';
 
@@ -112,5 +113,17 @@ suite('дерево команд под вид проекта', () => {
 		assert.strictEqual(favoriteVisibleFor('1c-platform-tools.epf.setVersionReport', 'setVersion', oneScript), false);
 		assert.strictEqual(favoriteVisibleFor('1c-platform-tools.pipelines.run', 'pipelines', oneScript), true);
 		assert.strictEqual(favoriteVisibleFor('1c-platform-tools.tasks.runOscript', 'oscriptTasks', oneScript), true);
+	});
+
+	test('избранное: сохранение у проекта OneScript не теряет команды проекта 1С и обратно', () => {
+		const load = { command: '1c-platform-tools.cf.load', sectionType: 'configuration' };
+		const install = { command: '1c-platform-tools.dependencies.install', sectionType: 'dependency' };
+		const build = { command: '1c-platform-tools.package.build', sectionType: 'package' };
+		const pipeline = { command: '1c-platform-tools.pipelines.run', sectionType: 'pipelines' };
+
+		// Окно у проекта OneScript показало install, build и цепочку: отмечена только сборка
+		assert.deepStrictEqual(mergeFavorites([load, install, pipeline], [build], oneScript), [load, build]);
+		// У проекта 1С без пакета команда сборки в окне не видна и тоже остаётся
+		assert.deepStrictEqual(mergeFavorites([build, install], [], treeTraitsOf('designer', false)), [build]);
 	});
 });

@@ -173,10 +173,10 @@ description: Инструменты MCP сервера mcp-1c-platform-tools. И
 | `deps_installOscript` | `1c-platform-tools.dependencies.installOscript` | без исхода |
 | `deps_updateOpm` | `1c-platform-tools.dependencies.updateOpm` | без исхода |
 | `deps_remove` | `1c-platform-tools.dependencies.remove` | без исхода |
-| `package_build` | `1c-platform-tools.package.build` | без исхода |
-| `package_install` | `1c-platform-tools.package.install` | без исхода |
+| `package_build` | `1c-platform-tools.package.build` | результат |
+| `package_install` | `1c-platform-tools.package.install` | результат |
 
-`deps_initPackagedef` совпадает с `project_init`: обязательный `projectPath`, создаёт `packagedef`. `deps_install` ставит зависимости по `packagedef`, `deps_installOscript` ставит OneScript рядом с другими версиями. К `opm install` в терминале переходи, когда этих инструментов нет. `package_build` собирает пакет OneScript проекта в `build/out/ospx`, `package_install` ставит собранный пакет в движок проекта; без файла берётся пакет версии из `packagedef`.
+`deps_initPackagedef` совпадает с `project_init`: обязательный `projectPath`, создаёт `packagedef`. `deps_install` ставит зависимости по `packagedef`, `deps_installOscript` ставит OneScript рядом с другими версиями. К `opm install` в терминале переходи, когда этих инструментов нет. `package_build` собирает пакет OneScript проекта в `build/out/ospx` и возвращает путь к нему в `artifact`. `package_install` ставит собранный пакет в движок проекта: пакет версии из `packagedef`, иначе самый новый. Ставь пакет после того, как `package_build` с `wait: true` вернул результат.
 
 ## Окружение и служебные файлы
 

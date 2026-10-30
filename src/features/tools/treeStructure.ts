@@ -458,6 +458,22 @@ export function favoriteVisibleFor(command: string, sectionType: string | undefi
 }
 
 /**
+ * Избранное после окна настройки. Окно показывает команды проекта этого вида, а
+ * избранное общее для всех проектов: команды, которых у проекта нет, остаются.
+ *
+ * @param current - Сохранённое избранное
+ * @param chosen - Отмеченное в окне
+ * @param traits - Черты проекта
+ */
+export function mergeFavorites<T extends { command: string; sectionType?: string }>(
+	current: readonly T[],
+	chosen: readonly T[],
+	traits: ReadonlySet<TreeProjectTrait>
+): T[] {
+	return [...current.filter((entry) => !favoriteVisibleFor(entry.command, entry.sectionType, traits)), ...chosen];
+}
+
+/**
  * Подпись команды такая же, как в её группе.
  *
  * Избранное показывает те же команды, что и группы, поэтому подпись берётся из

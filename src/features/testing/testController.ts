@@ -893,8 +893,14 @@ export class TestingController implements vscode.Disposable {
 			const run = this.controller.createTestRun(request);
 
 			const launch = this.launchForRun(root, units);
-			// Тесты запускает движок проекта: ниже ВерсияСреды он предупреждает, но не мешает
-			void runWithProject(root, () => this.vrunner.warnIfEngineUnfit());
+			// Тесты запускает движок проекта: ниже ВерсияСреды он предупреждает, но не мешает.
+			// vanessa-runner в Docker работает движком образа, а не этой машины
+			const local = launch.units.some((unit) => !unit.entry.adapter.usesVanessaRunner);
+			void runWithProject(root, async () => {
+				if (launch.units.length > 0 && (local || !(await this.vrunner.shouldUseDocker()))) {
+					await this.vrunner.warnIfEngineUnfit();
+				}
+			});
 			for (const { unit, problem } of launch.refused) {
 				const suite = this.suiteNode(unit.entry.item);
 				this.markAll(run, this.leafItems(unit.entry.item), 'errored', problem, suite ? [suite] : undefined);

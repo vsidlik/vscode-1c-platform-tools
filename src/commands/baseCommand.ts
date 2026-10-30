@@ -441,6 +441,14 @@ export abstract class BaseCommand {
 		if (await this.vrunner.shouldUseDocker()) {
 			return true;
 		}
+		return this.ensureLocalOscriptForExecution(opts);
+	}
+
+	/**
+	 * Проверка OneScript этой машины для команд, которые запускают oscript и opm
+	 * сами, в обход Docker: в UI — с предложением установки; при wait — только проверка.
+	 */
+	protected async ensureLocalOscriptForExecution(opts?: CommandExecutionOptions): Promise<boolean> {
 		if (opts?.wait === true) {
 			const oscriptOk = await this.vrunner.checkOscriptAvailable();
 			const opmOk = await this.vrunner.checkOpmAvailable();

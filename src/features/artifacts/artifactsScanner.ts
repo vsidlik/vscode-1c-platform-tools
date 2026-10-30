@@ -27,8 +27,8 @@ import { detectedScanRoots, findProjectFiles, isOutsideScanRoot, projectRelative
 
 export type ArtifactType = 'configuration' | 'extension' | 'processor' | 'report' | 'package';
 
-/** Собранные файлы: маска поиска и вид по расширению. */
-const BINARY_GLOB = '**/*.{cf,cfe,epf,erf}';
+/** Собранные файлы проекта 1С вместе с пакетами OneScript: маска поиска и вид по расширению. */
+const BINARY_GLOB = '**/*.{cf,cfe,epf,erf,ospx}';
 
 /** Собранные пакеты OneScript. */
 const PACKAGE_GLOB = `**/*${PACKAGE_EXTENSION}`;
@@ -168,8 +168,7 @@ export async function scanProjectArtifacts(
 	const exclude = excludeSegments(scanRoot.root);
 	const found = [
 		...(oneScript ? [] : sourcesOf(scanRoot, await resolveProjectLayout(scanRoot.root))),
-		...(oneScript ? [] : await binariesIn(scanRoot, BINARY_GLOB, exclude, token)),
-		...(await binariesIn(scanRoot, PACKAGE_GLOB, exclude, token)),
+		...(await binariesIn(scanRoot, oneScript ? PACKAGE_GLOB : BINARY_GLOB, exclude, token)),
 	];
 	const of = (type: ArtifactType) => found.filter((artifact) => artifact.type === type);
 	return {

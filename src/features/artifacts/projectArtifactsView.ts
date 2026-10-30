@@ -469,6 +469,9 @@ class ProjectItem extends vscode.TreeItem {
 }
 
 class SectionItem extends vscode.TreeItem {
+	/** Корень проекта раздела: сборка пакета из раздела идёт в нём. */
+	readonly projectRoot: string;
+
 	constructor(
 		label: string,
 		count: number,
@@ -482,6 +485,7 @@ class SectionItem extends vscode.TreeItem {
 				? vscode.TreeItemCollapsibleState.Expanded
 				: vscode.TreeItemCollapsibleState.None
 		);
+		this.projectRoot = result.root;
 		this.description = count > 0 ? String(count) : undefined;
 		this.iconPath = new vscode.ThemeIcon(icon);
 		// У раздела пакетов в строке кнопка сборки

@@ -7,7 +7,7 @@ import { OscriptTasksCommands } from '../../commands/oscriptTasksCommands';
 import { SetVersionCommands } from '../../commands/setVersionCommands';
 import { WorkspaceTasksCommands } from '../../commands/workspaceTasksCommands';
 import { PlatformTreeDataProvider } from './treeViewProvider';
-import type { TreeProjectTrait } from './treeStructure';
+import { mergeFavorites, type TreeProjectTrait } from './treeStructure';
 import {
 	getPickableCommandsByGroup,
 	getFavorites,
@@ -365,11 +365,12 @@ export function registerMainTreeCommands(
 			const favoriteKeys = new Set(
 				currentFavorites.map((favorite) => `${favorite.command}|${JSON.stringify(favorite.arguments ?? [])}`)
 			);
+			const traits = treeDataProvider.projectTraits();
 			const items = await buildFavoritesQuickPickItems(
 				favoriteKeys,
 				setVersionCommands,
 				oscriptTasksCommands,
-				treeDataProvider.projectTraits()
+				traits
 			);
 
 			const selected = await vscode.window.showQuickPick(items, {
@@ -380,12 +381,12 @@ export function registerMainTreeCommands(
 			if (selected === undefined) {
 				return;
 			}
-			const newFavorites = toFavoriteEntries(selected);
-			await setFavorites(context, newFavorites);
+			const chosen = toFavoriteEntries(selected);
+			await setFavorites(context, mergeFavorites(currentFavorites, chosen, traits));
 			treeDataProvider.refresh();
-			log.info(`Избранное обновлено: ${newFavorites.length} команд`);
+			log.info(`Избранное обновлено: ${chosen.length} команд`);
 			notifyQuiet(
-				`Избранное обновлено: ${newFavorites.length} команд`
+				`Избранное обновлено: ${chosen.length} команд`
 			);
 		})
 	);

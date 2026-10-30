@@ -33,7 +33,6 @@
         "1c-platform-tools.components.path.ovm",
         "1c-platform-tools.components.path.allure",
         "1c-platform-tools.components.path.oscript",
-        "1c-platform-tools.components.version.oscript",
         "1c-platform-tools.test.path.onescriptRunner",
         "1c-platform-tools.test.path.onebdd",
         "1c-platform-tools.platform.path",
@@ -3166,12 +3165,12 @@
         },
         {
           "submenu": "1c-platform-tools.metadata.createMenu",
-          "when": "view == 1c-platform-tools-metadata-tree",
+          "when": "view == 1c-platform-tools-metadata-tree && 1c-platform-tools.project.kind != onescript",
           "group": "navigation@0"
         },
         {
           "command": "1c-platform-tools.metadata.validateDump",
-          "when": "view == 1c-platform-tools-metadata-tree",
+          "when": "view == 1c-platform-tools-metadata-tree && 1c-platform-tools.project.kind != onescript",
           "group": "navigation@1"
         },
         {
@@ -3181,7 +3180,7 @@
         },
         {
           "command": "1c-platform-tools.metadata.er.openCanvas",
-          "when": "view == 1c-platform-tools-metadata-tree",
+          "when": "view == 1c-platform-tools-metadata-tree && 1c-platform-tools.project.kind != onescript",
           "group": "navigation@4"
         },
         {
@@ -4674,13 +4673,7 @@
             "type": "string",
             "default": "",
             "scope": "resource",
-            "description": "OneScript: полный путь к oscript.exe. Пусто: установка OVM версии проекта (components.version.oscript или ВерсияСреды в packagedef), иначе текущая установка OVM, затем oscript из PATH."
-          },
-          "1c-platform-tools.components.version.oscript": {
-            "type": "string",
-            "default": "",
-            "scope": "resource",
-            "description": "OneScript: версия проекта из установок OVM, например 2.2.1 или stable. Пусто: установка версии из ВерсияСреды в packagedef, иначе текущая установка OVM."
+            "description": "OneScript: полный путь к oscript.exe. Пусто: версия, выбранная командой «Выбрать версию OneScript», иначе текущая установка OVM или oscript из PATH, а если они ниже ВерсияСреды в packagedef, установка OVM этой версии."
           }
         }
       },

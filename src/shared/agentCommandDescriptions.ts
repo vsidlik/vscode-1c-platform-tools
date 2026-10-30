@@ -296,7 +296,7 @@ export const AGENT_COMMAND_DESCRIPTIONS: Record<string, AgentCommandDescription>
 		category: DEPENDENCIES,
 	},
 	'1c-platform-tools.package.build': {
-		title: 'Собрать пакет OneScript проекта по packagedef (opm build) в каталог сборки build/out/ospx',
+		title: 'Собрать пакет OneScript проекта по packagedef (opm build) в каталог сборки build/out/ospx; путь к собранному пакету возвращается в artifact',
 		category: ONESCRIPT,
 	},
 	'1c-platform-tools.package.install': {

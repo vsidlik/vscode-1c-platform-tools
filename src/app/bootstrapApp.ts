@@ -82,10 +82,7 @@ export async function bootstrapApp(context: vscode.ExtensionContext): Promise<Pl
 	context.subscriptions.push(
 		onDidChangeCurrentProject(showProjectEngine),
 		vscode.workspace.onDidChangeConfiguration((event) => {
-			if (
-				event.affectsConfiguration('1c-platform-tools.components.path.oscript') ||
-				event.affectsConfiguration('1c-platform-tools.components.version.oscript')
-			) {
+			if (event.affectsConfiguration('1c-platform-tools.components.path.oscript')) {
 				showProjectEngine();
 			}
 		})

@@ -23,10 +23,8 @@ import { workspaceProjectsSource } from '../features/projects/workspaceProjectsS
 import type { StructuredCommandResult } from '../shared/commandExecutionTypes';
 import { ONESCRIPT_PROJECT_DIRECTORIES, ONESCRIPT_PROJECT_FILES, PROJECT_STRUCTURE } from '../shared/projectStructure';
 import { getEngineBinaryCandidates, getOvmBaseDir, getOvmRootDir } from '../shared/ovmPaths';
-import { listOvmInstallations, parseEngineVersion, engineVersionSupported, pickEngineFor, type EngineVersion } from '../shared/oneScriptEngine';
+import { listOvmInstallations, parseEngineVersion, engineVersionSupported, type EngineVersion } from '../shared/oneScriptEngine';
 import { MODULES_DIRECTORY, readPackageManifest } from '../shared/oneScriptLayout';
-import { projectConfiguration } from '../shared/projectConfiguration';
-import { configurationWriteTarget } from '../shared/configurationWriteTarget';
 import { notifyBusy, notifyQuiet, notifyQuietFailure } from '../shared/notify';
 import { buildProcessCommand, joinCommands, PROCESS_HOST_SHELL } from '../utils/commandUtils';
 import { createVRunnerTask } from '../features/tasks/vrunnerTask';
@@ -34,9 +32,6 @@ import { showComponentError } from '../shared/githubToken';
 import { ensureWorkspaceTrusted } from '../shared/workspaceTrust';
 
 const log = logger.scope('commands');
-
-/** Настройка версии OneScript проекта: имя установки OVM. */
-const ONESCRIPT_VERSION_SETTING = 'components.version.oscript';
 
 /** Интервал опроса появления OVM после установки (мс) */
 const OVM_POLL_INTERVAL_MS = 3000;
@@ -715,9 +710,9 @@ export class DependenciesCommands extends BaseCommand {
 	 * Ставит версию OneScript через OVM рядом с уже установленными.
 	 *
 	 * Версию для всей машины (`ovm use`) команда меняет только при первой установке:
-	 * других версий ещё нет, и ломать нечего. Проект берёт поставленную версию сам:
-	 * по ВерсияСреды из packagedef, а если она выбрала бы другую установку,
-	 * версия записывается в настройку проекта components.version.oscript.
+	 * других версий ещё нет, и ломать нечего. Проект, из которого её поставили,
+	 * работает поставленной версией: сам или, если сам он выбрал бы другую
+	 * установку, через выбор версии проекта.
 	 * На Windows ovm запускается сам, на Linux и macOS через Mono. Конец установки
 	 * узнаётся по коду возврата задачи, в терминале — по появлению движка в каталоге версии.
 	 *
@@ -853,33 +848,31 @@ export class DependenciesCommands extends BaseCommand {
 	}
 
 	/**
-	 * Проект берёт поставленную версию: сам по ВерсияСреды, иначе через настройку.
+	 * Проект берёт поставленную версию: сам, а если сам он нашёл другую
+	 * установку, через выбор версии проекта.
 	 *
-	 * Иначе до конца сессии работала бы установка, найденная при активации:
-	 * PATH процесса VS Code задан при его запуске и новую установку не видит.
+	 * Движок ищется заново: иначе до конца сессии работала бы установка, найденная
+	 * при активации, ведь PATH процесса VS Code задан при его запуске.
 	 *
 	 * @param root - Корень проекта
 	 * @param version - Версия или метка, с которой поставлен OneScript
 	 */
 	private async useInstalledVersion(root: string, version: string): Promise<void> {
-		const config = projectConfiguration(root);
-		const configured = config.get<string>(ONESCRIPT_VERSION_SETTING, '').trim();
-		const required = readPackageManifest(root)?.engineVersion;
-		const byPackagedef = required === undefined ? undefined : pickEngineFor(required, listOvmInstallations())?.name;
-		const chosenWithoutSetting = byPackagedef ?? currentOvmVersion();
-		if (configured !== '' ? configured !== version : chosenWithoutSetting !== version) {
-			await config.update(ONESCRIPT_VERSION_SETTING, version, configurationWriteTarget(root));
-			log.info(`OneScript проекта ${root}: ${version}, настройка ${ONESCRIPT_VERSION_SETTING}`);
-		}
 		await this.vrunner.refreshOneScriptResolution();
+		const installed = listOvmInstallations().find((item) => item.name === version);
+		const engine = await this.vrunner.projectEngine();
+		if (installed !== undefined && !sameFile(engine?.oscript, installed.oscript)) {
+			await this.vrunner.setProjectOscriptVersion(version);
+			log.info(`OneScript проекта ${root}: установка OVM ${version}`);
+		}
 		notifyQuiet(`OneScript ${version} установлен`);
 	}
 
 	/**
 	 * Выбирает версию OneScript проекта из установок OVM.
 	 *
-	 * Выбор пишется в настройку проекта components.version.oscript; пустая
-	 * настройка значит установку по ВерсияСреды из packagedef.
+	 * Выбор хранится у проекта; без выбора движок проекта находится сам: движок
+	 * машины, если он не ниже ВерсияСреды из packagedef, иначе установка по ней.
 	 *
 	 * @returns Промис, который разрешается после выбора
 	 */
@@ -891,8 +884,7 @@ export class DependenciesCommands extends BaseCommand {
 		const installations = listOvmInstallations();
 		const required = readPackageManifest(root)?.engineVersion;
 		const requiredVersion = required === undefined ? undefined : parseEngineVersion(required);
-		const config = projectConfiguration(root);
-		const configured = config.get<string>(ONESCRIPT_VERSION_SETTING, '').trim();
+		const configured = this.vrunner.projectOscriptVersion();
 		const versions = await Promise.all(installations.map((item) => item.version ?? this.vrunner.engineVersion(item.oscript)));
 		const describe = (version: EngineVersion | undefined, name: string): string | undefined => {
 			const parts = [
@@ -903,11 +895,10 @@ export class DependenciesCommands extends BaseCommand {
 		};
 
 		type VersionItem = vscode.QuickPickItem & { value?: string; install?: boolean };
-		const automatic = required === undefined ? undefined : pickEngineFor(required, installations);
 		const items: VersionItem[] = [
 			{
-				label: required === undefined ? 'Текущая установка OVM' : `По ВерсияСреды (${required})`,
-				description: required === undefined ? currentOvmVersion() : automatic?.name ?? 'нет подходящей установки',
+				label: 'Автоматически',
+				description: required === undefined ? 'текущая установка OVM' : `не ниже ВерсияСреды ${required}`,
 				value: '',
 			},
 			...(installations.length > 0 ? [{ label: 'Установки OVM', kind: vscode.QuickPickItemKind.Separator }] : []),
@@ -936,18 +927,29 @@ export class DependenciesCommands extends BaseCommand {
 			await this.installOscript();
 			return;
 		}
-		await config.update(ONESCRIPT_VERSION_SETTING, chosen.value === '' ? undefined : chosen.value, configurationWriteTarget(root));
-		await this.vrunner.refreshOneScriptResolution();
+		await this.vrunner.setProjectOscriptVersion(chosen.value === '' ? undefined : chosen.value);
 		const engine = await this.vrunner.projectEngine();
 		notifyQuiet(engine?.version ? `OneScript проекта: ${engine.version.text}` : 'Версия OneScript проекта выбрана');
 	}
 }
 
-/** Версия, на которую указывает `current` OVM; undefined, если её нет. */
-function currentOvmVersion(): string | undefined {
-	try {
-		return path.basename(fsSync.realpathSync(getOvmRootDir()));
-	} catch {
-		return undefined;
+/**
+ * Один ли это исполняемый файл: движок из `current` OVM — тот же файл каталога версии.
+ *
+ * @param left - Файл найденного движка; undefined, если движка нет
+ * @param right - Файл установки
+ */
+function sameFile(left: string | undefined, right: string): boolean {
+	if (left === undefined) {
+		return false;
 	}
+	const real = (file: string): string => {
+		try {
+			return fsSync.realpathSync(file);
+		} catch {
+			return path.resolve(file);
+		}
+	};
+	const [a, b] = [real(left), real(right)];
+	return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
 }

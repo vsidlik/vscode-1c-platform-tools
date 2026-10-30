@@ -502,8 +502,11 @@ export class TestCommands extends BaseCommand {
 	 */
 	async runOneScriptTests(opts?: CommandExecutionOptions): Promise<StructuredCommandResult | void> {
 		const root = this.ensureWorkspace();
-		if (!root || !(await this.ensureLocalOscriptAvailable())) {
-			return;
+		if (!root) {
+			return this.rejectIfWait(opts, 'Откройте рабочую область с проектом OneScript');
+		}
+		if (!(await this.ensureLocalOscriptForExecution(opts))) {
+			return this.rejectIfWait(opts, 'OneScript (oscript) или opm не найдены');
 		}
 		return runOneScriptTests(this.vrunner, root, opts);
 	}

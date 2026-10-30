@@ -1,12 +1,9 @@
 /**
- * Раскладка проекта OneScript: описание пакета, каталоги исходного кода,
- * тестов, задач и зависимостей.
+ * Раскладка проекта OneScript: описание пакета, каталоги тестов, задач и зависимостей.
  *
- * Исходный код пакета ничем не размечен: каталоги берутся из файлов, которые
- * `packagedef` объявляет классами, модулями и исполняемыми файлами, а без таких
- * объявлений это `src`. Задачи и зависимости лежат там, где их ищет opm: `tasks`
- * и `oscript_modules` в корне проекта. Скриптовые тесты маркеров не имеют, их
- * каталог задаёт настройка, по умолчанию это каталог тестов проекта.
+ * Задачи и зависимости лежат там, где их ищет opm: каталог из `.Задачи(...)`,
+ * иначе `tasks`, и `oscript_modules` в корне проекта. Скриптовые тесты маркеров
+ * не имеют, их каталог задаёт настройка, по умолчанию это каталог тестов проекта.
  *
  * Описание читается без ожидания и запоминается до изменения файла: его
  * спрашивают перед каждой командой.
@@ -15,7 +12,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { declaresPackageApi, parsePackagedef, type PackageManifest } from './packagedef';
+import { parsePackagedef, type PackageManifest } from './packagedef';
 import { DEFAULT_TESTING } from './pathDefaults';
 import { projectConfiguration } from './projectConfiguration';
 import { directoryKey, PROJECT_FILE, testsDirectoryName } from './projectLayout';
@@ -27,23 +24,8 @@ export const MODULES_DIRECTORY = 'oscript_modules';
 /** Каталог задач `opm run`. */
 export const TASKS_DIRECTORY = 'tasks';
 
-/** Каталог исходного кода, когда `packagedef` файлов не объявляет. */
+/** Каталог исходного кода пакета по соглашению. */
 const DEFAULT_SOURCES = 'src';
-
-/** Раскладка проекта OneScript. */
-export interface OneScriptLayout {
-	/** Файл `packagedef`. */
-	manifestFile: string;
-	manifest: PackageManifest;
-	/** Каталоги исходного кода пакета. */
-	sources: string[];
-	/** Каталог тестов. */
-	tests: string;
-	/** Каталог задач `opm run`. */
-	tasks: string;
-	/** Каталог зависимостей. */
-	modules: string;
-}
 
 /** Прочитанные описания: ключ {@link directoryKey} корня. */
 const manifests = new Map<string, { mtimeMs: number; size: number; manifest: PackageManifest }>();
@@ -80,27 +62,6 @@ export function readPackageManifest(root: string): PackageManifest | undefined {
 }
 
 /**
- * Каталоги исходного кода пакета: верхние каталоги объявленных файлов, без
- * объявлений `src`, если он есть.
- *
- * @param root - Корень проекта
- * @param manifest - Описание пакета
- */
-export function packageSourceDirectories(root: string, manifest: PackageManifest): string[] {
-	const directories = new Set<string>();
-	for (const entry of [...manifest.classes, ...manifest.modules, ...manifest.executables]) {
-		const [first, ...rest] = entry.file?.split('/') ?? [];
-		if (rest.length > 0 && first !== '' && first !== '..' && !first.includes(':')) {
-			directories.add(first);
-		}
-	}
-	if (directories.size === 0 && fs.existsSync(path.join(root, DEFAULT_SOURCES))) {
-		directories.add(DEFAULT_SOURCES);
-	}
-	return [...directories].sort().map((dir) => path.join(root, dir));
-}
-
-/**
  * Каталог тестов OneScript относительно корня проекта: настройка
  * `test.path.onescriptTests`, пустая значит каталог тестов проекта.
  *
@@ -111,27 +72,6 @@ export function oneScriptTestsPath(root: string | undefined = currentRoot()): st
 		.get<string>('test.path.onescriptTests', DEFAULT_TESTING.onescriptTestsPath)
 		.trim();
 	return configured.length > 0 ? configured : testsDirectoryName(root);
-}
-
-/**
- * Раскладка проекта OneScript.
- *
- * @param root - Корень проекта
- * @returns undefined, если в корне нет `packagedef`
- */
-export function oneScriptLayout(root: string): OneScriptLayout | undefined {
-	const manifest = readPackageManifest(root);
-	if (manifest === undefined) {
-		return undefined;
-	}
-	return {
-		manifestFile: path.join(root, PROJECT_FILE),
-		manifest,
-		sources: packageSourceDirectories(root, manifest),
-		tests: path.resolve(root, oneScriptTestsPath(root)),
-		tasks: oneScriptTasksDirectory(root, manifest),
-		modules: path.join(root, MODULES_DIRECTORY),
-	};
 }
 
 /**
@@ -164,14 +104,4 @@ export function looksLikeOneScriptPackage(dir: string): boolean {
 			return false;
 		}
 	});
-}
-
-/**
- * Собирается ли проект пакетом: `packagedef` объявляет классы, модули или исполняемый файл.
- *
- * @param root - Корень проекта
- */
-export function isPackageProject(root: string): boolean {
-	const manifest = readPackageManifest(root);
-	return manifest !== undefined && declaresPackageApi(manifest);
 }

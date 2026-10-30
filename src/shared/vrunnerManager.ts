@@ -51,6 +51,7 @@ import {
 import {
 	engineVersionSupported,
 	listOvmInstallations,
+	machineEngineFits,
 	parseEngineVersion,
 	pickEngineFor,
 	type EngineSource,
@@ -96,7 +97,7 @@ import { overlaySettings, parseSettingsJson, readSettingsJson, readSettingsJsonS
 import { translateArgsToV3 } from './vrunnerCommandMap';
 import { createVRunnerTask, type TaskOutputChain } from '../features/tasks/vrunnerTask';
 import { decodeProcessOutput } from './processOutput';
-import { ACTIVE_ENV_OVERRIDES_STATE, ACTIVE_ENV_PROFILE_STATE, ACTIVE_ENVIRONMENT_STATE, projectMemento } from './projectState';
+import { ACTIVE_ENV_OVERRIDES_STATE, ACTIVE_ENV_PROFILE_STATE, ACTIVE_ENVIRONMENT_STATE, ONESCRIPT_VERSION_STATE, projectMemento } from './projectState';
 import { currentRoot, outsideProject, projectByRoot, projectRootKey, runWithProject, sameProjectRoot } from './workspaceProjects';
 import { projectConfiguration } from './projectConfiguration';
 import { projectTerminal } from '../features/tasks/terminalProjects';
@@ -226,7 +227,7 @@ export interface LaunchSummary {
 interface EngineRequest {
 	/** components.path.oscript */
 	path: string;
-	/** components.version.oscript */
+	/** Установка OVM, выбранная для проекта */
 	version: string;
 	/** ВерсияСреды из packagedef */
 	required?: string;
@@ -395,16 +396,41 @@ export class VRunnerManager {
 		return currentRoot();
 	}
 
-	/** Что выбирает движок проекта вызова: настройки и ВерсияСреды из packagedef. */
+	/** Что выбирает движок проекта вызова: настройка, выбор проекта и ВерсияСреды из packagedef. */
 	private engineRequest(): EngineRequest {
 		const root = this.getEffectiveRoot();
-		const config = projectConfiguration(root);
 		const required = root === undefined ? undefined : readPackageManifest(root)?.engineVersion;
 		return {
-			path: config.get<string>('components.path.oscript', '').trim(),
-			version: config.get<string>('components.version.oscript', '').trim(),
+			path: projectConfiguration(root).get<string>('components.path.oscript', '').trim(),
+			version: this.projectOscriptVersion(),
 			...(required ? { required } : {}),
 		};
+	}
+
+	/**
+	 * Установка OVM, выбранная для проекта вызова командой «Выбрать версию OneScript».
+	 *
+	 * Выбор хранится у проекта, а не в настройках папки: подпроекты одной папки
+	 * выбирают движок каждый для себя.
+	 *
+	 * @returns Имя установки или пустая строка, когда движок выбирается сам
+	 */
+	public projectOscriptVersion(): string {
+		if (this.getEffectiveRoot() === undefined) {
+			return '';
+		}
+		const value = projectMemento().get<unknown>(ONESCRIPT_VERSION_STATE);
+		return typeof value === 'string' ? value.trim() : '';
+	}
+
+	/**
+	 * Выбирает установку OVM для проекта вызова и заново находит его движок.
+	 *
+	 * @param name - Имя установки; undefined — движок выбирается сам
+	 */
+	public async setProjectOscriptVersion(name: string | undefined): Promise<void> {
+		await projectMemento().update(ONESCRIPT_VERSION_STATE, name);
+		await this.refreshOneScriptResolution();
 	}
 
 	/** Ключ найденного движка: проекты с одинаковым выбором делят один движок. */
@@ -738,12 +764,13 @@ export class VRunnerManager {
 	/**
 	 * Находит движок OneScript проекта.
 	 *
-	 * Порядок: путь из components.path.oscript; установка OVM с именем из
-	 * components.version.oscript; установка OVM по ВерсияСреды из packagedef, см.
-	 * {@link pickEngineFor}; текущая установка OVM; oscript из PATH. Настройка,
-	 * которая не ведёт к рабочему движку, пишется в журнал, и выбор идёт дальше.
+	 * Порядок: путь из components.path.oscript; установка OVM, выбранная для
+	 * проекта; движок машины (текущая установка OVM, иначе oscript из PATH), если
+	 * он не ниже ВерсияСреды из packagedef; установка OVM по ВерсияСреды, см.
+	 * {@link pickEngineFor}. Выбор, который не ведёт к рабочему движку, пишется в
+	 * журнал, и поиск идёт дальше.
 	 *
-	 * @param request - Настройки и ВерсияСреды проекта
+	 * @param request - Выбор и ВерсияСреды проекта
 	 * @returns Найденный движок или undefined, если oscript недоступен ни одним способом
 	 */
 	private async resolveEngine(request: EngineRequest): Promise<SelectedEngine | undefined> {
@@ -759,36 +786,49 @@ export class VRunnerManager {
 		if (request.version !== '') {
 			const chosen = installations.find((item) => item.name === request.version);
 			if (chosen && await this.runCommandForCheck(chosen.oscript, ['-version'], path.dirname(chosen.oscript))) {
-				log.info(`oscript: установка OVM ${chosen.name} из настройки components.version.oscript: ${chosen.oscript}`);
-				return { oscript: chosen.oscript, source: 'version' };
+				log.info(`oscript: установка OVM ${chosen.name}, выбранная для проекта: ${chosen.oscript}`);
+				return { oscript: chosen.oscript, source: 'chosen' };
 			}
-			log.warn(`components.version.oscript: установки OneScript «${request.version}» нет в ${getOvmBaseDir()}`);
+			log.warn(`Выбранной для проекта установки OneScript «${request.version}» нет в ${getOvmBaseDir()}`);
 		}
-		if (request.required !== undefined) {
-			const chosen = pickEngineFor(request.required, installations);
+
+		// Движок машины, который не ниже ВерсияСреды, остаётся: другая установка
+		// берётся только вместо движка ниже требуемого или когда движка машины нет
+		const machine = await this.machineEngine();
+		const machineVersion = machine === undefined || request.required === undefined ? undefined : await this.engineVersion(machine.oscript);
+		if (machine === undefined || !machineEngineFits(machineVersion, request.required)) {
+			const chosen = request.required === undefined ? undefined : pickEngineFor(request.required, installations);
 			if (chosen && await this.runCommandForCheck(chosen.oscript, ['-version'], path.dirname(chosen.oscript))) {
 				log.info(`oscript: установка OVM ${chosen.name} по ВерсияСреды ${request.required}: ${chosen.oscript}`);
 				return { oscript: chosen.oscript, source: 'packagedef' };
 			}
 		}
+		if (machine === undefined) {
+			log.warn(`oscript не найден ни в установке OVM (${getEngineBinaryCandidates(getOvmRootDir())[0]}), ни в PATH`);
+		} else {
+			log.info(machine.source === 'ovm' ? `oscript: используется установка OVM: ${machine.oscript}` : 'oscript: используется установка из PATH');
+		}
+		return machine;
+	}
 
-		// Установка OVM идёт перед PATH: её ставит сам пользователь командой
-		// «Установить OneScript», а системный каталог другой установки может
-		// стоять в PATH раньше, потому что системная часть склеивается первой.
-		const ovmCandidates = getEngineBinaryCandidates(getOvmRootDir());
-		for (const candidate of ovmCandidates) {
+	/**
+	 * Движок машины: текущая установка OVM, иначе oscript из PATH.
+	 *
+	 * Установка OVM идёт перед PATH: её ставит сам пользователь командой
+	 * «Установить OneScript», а системный каталог другой установки может стоять в
+	 * PATH раньше, потому что системная часть склеивается первой.
+	 *
+	 * @returns Движок или undefined, если ни того, ни другого нет
+	 */
+	private async machineEngine(): Promise<SelectedEngine | undefined> {
+		for (const candidate of getEngineBinaryCandidates(getOvmRootDir())) {
 			if (fsSync.existsSync(candidate) && await this.runCommandForCheck(candidate, ['-version'], getOvmBinDir())) {
-				log.info(`oscript: используется установка OVM: ${candidate}`);
 				return { oscript: candidate, source: 'ovm' };
 			}
 		}
-
 		if (await this.runCommandForCheck('oscript', ['-version'])) {
-			log.info('oscript: используется установка из PATH');
 			return { oscript: 'oscript', source: 'system' };
 		}
-
-		log.warn(`oscript не найден ни в установке OVM (${ovmCandidates[0]}), ни в PATH`);
 		return undefined;
 	}
 
@@ -2592,11 +2632,11 @@ export class VRunnerManager {
 	}
 
 	/**
-	 * Выполняет команду opm синхронно (для проверок)
-	 * 
-	 * Используется для проверок и валидации, а не для выполнения команд пользователю.
-	 * Для выполнения команд пользователю используйте executeOpmInTerminal().
-	 * 
+	 * Выполняет команду opm и ждёт её: вывод возвращается, а не идёт в терминал.
+	 *
+	 * Нужен агенту с `wait: true`. Команды человеку запускает executeOpmInTerminal().
+	 * opm работает движком проекта и в окружении запуска, как и задача opm.
+	 *
 	 * @param args - Аргументы команды opm
 	 * @param options - Опции выполнения
 	 * @param options.cwd - Рабочая директория (по умолчанию workspace root)
@@ -2609,25 +2649,33 @@ export class VRunnerManager {
 		if (untrustedWorkspaceBlocks(`opm ${args[0] ?? ''}`.trim())) {
 			return untrustedExecutionResult();
 		}
+		const problem = this.environmentProblem();
+		if (problem !== undefined) {
+			return { success: false, stdout: '', stderr: problem, exitCode: 1 };
+		}
 		return new Promise((resolve) => {
 			const { path: opmPath, leadingArgs } = this.getOpmInvocation();
 			const command = buildProcessCommand(opmPath, [...leadingArgs, ...args]);
+			const cwd = options?.cwd || this.getEffectiveRoot();
 
 			const execOptions = {
-				cwd: options?.cwd || this.getEffectiveRoot(),
+				cwd,
+				env: this.childEnv(),
 				maxBuffer: MAX_EXEC_BUFFER_SIZE,
 				encoding: 'buffer' as const
 			};
 
+			log.info(`exec: ${command} (cwd: ${cwd ?? 'не задан'})`);
 			exec(command, execOptions, (error, stdout, stderr) => {
-				const result: VRunnerExecutionResult = {
+				const errorOutput = decodeProcessOutput(stderr);
+				// процесс, который не удалось запустить, ничего не пишет в stderr: причина только в ошибке
+				const notStarted = error !== null && typeof error.code !== 'number';
+				resolve({
 					success: !error,
 					stdout: decodeProcessOutput(stdout),
-					stderr: decodeProcessOutput(stderr),
+					stderr: notStarted && errorOutput === '' ? error.message : errorOutput,
 					exitCode: error ? (typeof error.code === 'number' ? error.code : 1) : 0
-				};
-
-				resolve(result);
+				});
 			});
 		});
 	}

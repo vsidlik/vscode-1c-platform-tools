@@ -11,6 +11,7 @@ import {
 	compareEngineVersions,
 	engineVersionSupported,
 	listOvmInstallations,
+	machineEngineFits,
 	parseEngineVersion,
 	pickEngineFor,
 } from '../../shared/oneScriptEngine';
@@ -31,6 +32,18 @@ describe('версия движка', () => {
 		assert.equal(compareEngineVersions([2, 0], [2, 0, 0]), 0);
 		assert.equal(engineVersionSupported([2, 2, 1], [2, 2, 0]), true);
 		assert.equal(engineVersionSupported([1, 9, 2], [2, 0, 0]), false);
+	});
+
+	test('движок машины не ниже ВерсияСреды остаётся, ниже — заменяется', () => {
+		const engine = (text: string) => parseEngineVersion(text);
+
+		assert.equal(machineEngineFits(engine('2.2.1'), '2.0.0'), true, 'ovm use 2.2.1 при ВерсияСреды 2.0.0');
+		assert.equal(machineEngineFits(engine('2.0.0'), '2.0.0'), true);
+		assert.equal(machineEngineFits(engine('2.2.1'), '1.9.2'), true, 'opm сравнивает только числа');
+		assert.equal(machineEngineFits(engine('1.9.2'), '2.0.0'), false);
+		assert.equal(machineEngineFits(engine('2.0.0'), undefined), true, 'без ВерсияСреды проверять нечего');
+		assert.equal(machineEngineFits(undefined, '2.0.0'), true, 'версия движка неизвестна');
+		assert.equal(machineEngineFits(engine('1.9.2'), 'stable'), true, 'ВерсияСреды не номер');
 	});
 });
 

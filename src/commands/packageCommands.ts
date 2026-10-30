@@ -6,6 +6,9 @@
  * файл ставится в движок проекта командой `opm install -f`: так его проверяют
  * так же, как пакет из хаба. Публикацию `opm push` расширение не делает: ей
  * нужен токен хаба, а канал выпуска opm выбирает по ветке, это шаг CI.
+ *
+ * Человеку команды запускают opm задачей VS Code. Агент с `wait: true` получает
+ * исход: код возврата и вывод opm, у сборки ещё и путь к собранному пакету.
  * @module packageCommands
  */
 
@@ -14,6 +17,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { BaseCommand } from './baseCommand';
 import { getBuildPackageCommandName, getInstallPackageCommandName } from '../features/tools/commandNames';
+import type { CommandExecutionOptions, StructuredCommandResult } from '../shared/commandExecutionTypes';
 import { logger } from '../shared/logger';
 import { readPackageManifest } from '../shared/oneScriptLayout';
 import { PACKAGE_EXTENSION, packageFileName } from '../shared/packagedef';
@@ -42,12 +46,24 @@ export function packageFileArgument(target: unknown): string | undefined {
 }
 
 /**
+ * Проект из аргумента команды: раздел «Пакеты» дерева артефактов несёт корень своего проекта.
+ *
+ * @param target - Первый аргумент команды
+ * @returns Корень проекта или undefined, тогда команда идёт в текущем проекте
+ */
+export function packageProjectArgument(target: unknown): string | undefined {
+	const root = typeof target === 'object' && target !== null ? (target as { projectRoot?: unknown }).projectRoot : undefined;
+	return typeof root === 'string' ? root : undefined;
+}
+
+/**
  * Собранные пакеты каталога, новые первыми.
  *
  * @param dir - Каталог собранных пакетов
+ * @param since - Только файлы, изменённые не раньше этого времени, мс
  * @returns Абсолютные пути
  */
-async function builtPackages(dir: string): Promise<string[]> {
+async function builtPackages(dir: string, since = 0): Promise<string[]> {
 	let names: string[];
 	try {
 		names = await fs.readdir(dir);
@@ -58,8 +74,17 @@ async function builtPackages(dir: string): Promise<string[]> {
 	const stamped = await Promise.all(
 		files.map(async (file) => ({ file, mtimeMs: (await fs.stat(file).catch(() => undefined))?.mtimeMs ?? 0 }))
 	);
-	return stamped.sort((left, right) => right.mtimeMs - left.mtimeMs).map((item) => item.file);
+	return stamped
+		.filter((item) => item.mtimeMs >= since)
+		.sort((left, right) => right.mtimeMs - left.mtimeMs)
+		.map((item) => item.file);
 }
+
+/** Ответ агенту, когда OneScript нет. */
+const ONESCRIPT_NOT_FOUND = 'OneScript (oscript) или opm не найдены';
+
+/** Время записи файла грубее часов: пакет, записанный в ту же секунду, что начало сборки, тоже её. */
+const MTIME_TOLERANCE_MS = 2000;
 
 /**
  * Команды пакета OneScript.
@@ -77,29 +102,34 @@ export class PackageCommands extends BaseCommand {
 	/**
 	 * Собирает пакет: `opm build -o <каталог сборки>` в корне проекта.
 	 *
-	 * @returns Промис, который разрешается после запуска сборки
+	 * @param opts - Опции вызова; с `wait: true` сборка ждётся и возвращается её исход
+	 * @returns Исход сборки и путь к пакету при `wait: true`
 	 */
-	async buildPackage(): Promise<void> {
+	async buildPackage(opts?: CommandExecutionOptions): Promise<StructuredCommandResult | void> {
 		if (!ensureWorkspaceTrusted('сборка пакета OneScript')) {
 			return;
 		}
 		const root = this.ensureWorkspace();
-		if (!root || !(await this.ensureLocalOscriptAvailable())) {
-			return;
+		if (!root) {
+			return this.rejectIfWait(opts, 'Откройте рабочую область с проектом OneScript');
+		}
+		if (!(await this.ensureLocalOscriptForExecution(opts))) {
+			return this.rejectIfWait(opts, ONESCRIPT_NOT_FOUND);
 		}
 		const outDir = this.packagesDirectory(root);
-		try {
-			await fs.mkdir(outDir, { recursive: true });
-		} catch (error) {
-			const message = `Не удалось создать каталог сборки ${outDir}: ${(error as Error).message}`;
-			log.error(message);
-			void vscode.window.showErrorMessage(message);
+		const noDirectory = `Не удалось создать каталог сборки ${outDir}`;
+		if (!(await this.ensureDirectoryForExecution(outDir, opts, noDirectory))) {
+			return this.rejectIfWait(opts, noDirectory);
+		}
+		const args = ['build', '-o', outDir];
+		if (opts?.wait !== true) {
+			this.vrunner.executeOpmInTerminal(args, { cwd: root, name: getBuildPackageCommandName().title });
 			return;
 		}
-		this.vrunner.executeOpmInTerminal(['build', '-o', outDir], {
-			cwd: root,
-			name: getBuildPackageCommandName().title,
-		});
+		const startedAt = Date.now() - MTIME_TOLERANCE_MS;
+		const result = await this.vrunner.executeOpm(args, { cwd: root });
+		const [built] = result.success ? await builtPackages(outDir, startedAt) : [];
+		return this.vrunnerResultToStructured(result, built);
 	}
 
 	/**
@@ -108,26 +138,31 @@ export class PackageCommands extends BaseCommand {
 	 * Без файла берёт собранный пакет из каталога сборки, при нескольких
 	 * спрашивает, какой; пакет текущей версии из packagedef стоит первым.
 	 *
-	 * @param target - Файл пакета: путь, Uri или узел дерева артефактов
-	 * @param ask - Спросить, какой пакет ставить, если их несколько; агенту не задаётся
-	 * @returns Промис, который разрешается после запуска установки
+	 * @param file - Файл пакета; без него пакет из каталога сборки
+	 * @param opts - Опции агента: вопросов нет, с `wait: true` установка ждётся; без них вызов человека
+	 * @returns Исход установки при `wait: true`
 	 */
-	async installPackage(target?: unknown, ask = true): Promise<void> {
+	async installPackage(file?: string, opts?: CommandExecutionOptions): Promise<StructuredCommandResult | void> {
 		if (!ensureWorkspaceTrusted('установка пакета OneScript')) {
 			return;
 		}
 		const root = this.ensureWorkspace();
 		if (!root) {
+			return this.rejectIfWait(opts, 'Откройте рабочую область с проектом OneScript');
+		}
+		const target = file ?? (await this.pickBuiltPackage(root, opts === undefined));
+		if (target === undefined) {
+			return this.rejectIfWait(opts, `Собранного пакета нет в ${this.packagesDirectory(root)}: сначала соберите его`);
+		}
+		if (!(await this.ensureLocalOscriptForExecution(opts))) {
+			return this.rejectIfWait(opts, ONESCRIPT_NOT_FOUND);
+		}
+		const args = ['install', '-f', target];
+		if (opts?.wait !== true) {
+			this.vrunner.executeOpmInTerminal(args, { cwd: root, name: `${getInstallPackageCommandName().title} ${path.basename(target)}` });
 			return;
 		}
-		const file = packageFileArgument(target) ?? (await this.pickBuiltPackage(root, ask));
-		if (file === undefined || !(await this.ensureLocalOscriptAvailable())) {
-			return;
-		}
-		this.vrunner.executeOpmInTerminal(['install', '-f', file], {
-			cwd: root,
-			name: `${getInstallPackageCommandName().title} ${path.basename(file)}`,
-		});
+		return this.vrunnerResultToStructured(await this.vrunner.executeOpm(args, { cwd: root }), target);
 	}
 
 	/**

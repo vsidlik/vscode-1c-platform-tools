@@ -17,8 +17,8 @@ description: Зависимости и структура проекта 1С и 
 | Обновить opm | `1c-platform-tools.dependencies.updateOpm` | `deps_updateOpm` | без исхода |
 | Удалить зависимости | `1c-platform-tools.dependencies.remove` | `deps_remove` | без исхода |
 | Выбрать версию OneScript проекта | `1c-platform-tools.dependencies.selectOscript` | нет | |
-| Собрать пакет OneScript | `1c-platform-tools.package.build` | `package_build` | без исхода |
-| Установить собранный пакет | `1c-platform-tools.package.install` | `package_install` | без исхода |
+| Собрать пакет OneScript | `1c-platform-tools.package.build` | `package_build` | результат |
+| Установить собранный пакет | `1c-platform-tools.package.install` | `package_install` | результат |
 | Настроить Git | `1c-platform-tools.dependencies.setupGit` | нет | |
 
 `deps_initPackagedef` и `project_init` делают одно и то же: `projectPath` обязателен, в этом каталоге создаётся `packagedef`, проект становится текущим. Существующий файл не перезаписывается. Для Execute Command каталог можно передать и полем `root`.
@@ -27,9 +27,9 @@ description: Зависимости и структура проекта 1С и 
 
 `deps_install` ставит зависимости по `packagedef`. `deps_installOscript` ставит OneScript. Если oscript уже есть, вызывай `deps_install`, а `deps_installOscript` — когда интерпретатора нет.
 
-Движок OneScript у каждого проекта свой: установка OVM с именем из настройки `components.version.oscript`, без неё установка версии из `ВерсияСреды` в `packagedef` (иначе самая новая той же старшей версии не ниже), затем текущая установка OVM. `deps_installOscript` ставит версию рядом с остальными и машину не переключает. Выбор версии в палитре делает человек; агент пишет имя установки в `components.version.oscript`.
+Движок OneScript у каждого проекта свой: установка OVM, выбранная для проекта, иначе текущая установка OVM, если она не ниже `ВерсияСреды` в `packagedef`, иначе установка версии из `ВерсияСреды` (если такой нет, самая новая той же старшей версии, но не ниже). `deps_installOscript` ставит версию рядом с остальными и машину не переключает. Версию проекта выбирает человек в палитре; движок по пути агент задаёт настройкой `components.path.oscript`.
 
-`package_build` собирает `<Имя>-<Версия>.ospx` по `packagedef` в `build/out/ospx`. `package_install` ставит собранный пакет в движок проекта (`opm install -f`); без файла берётся пакет версии из `packagedef`, иначе самый новый. Публикацию `opm push` делает CI.
+`package_build` собирает `<Имя>-<Версия>.ospx` по `packagedef` в `build/out/ospx`, путь к пакету приходит в `artifact`. `package_install` ставит собранный пакет в движок проекта (`opm install -f`): пакет версии из `packagedef`, иначе самый новый. Публикацию `opm push` делает CI.
 
 `1c-platform-tools.dependencies.setupGit` открывает мастер и агенту недоступен. Ответ: «Команда открывает окна VS Code и недоступна агенту. Мастер настройки git выполняется пользователем; для агента настройте git командами git config.» Настраивай git командами git.
 
@@ -38,4 +38,4 @@ description: Зависимости и структура проекта 1С и 
 - Зависимости текущего проекта: `deps_install`.
 - Нет oscript: `deps_installOscript`, затем `deps_install`.
 - Новый каталог сделать проектом: `project_init` с `projectPath`.
-- Собрать и проверить пакет OneScript: `package_build`, затем `package_install`.
+- Собрать и проверить пакет OneScript: `package_build`, затем `package_install`, оба с `wait: true`.

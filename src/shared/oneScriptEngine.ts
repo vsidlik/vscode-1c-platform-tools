@@ -121,13 +121,26 @@ export function pickEngineFor(required: string, installations: readonly OvmInsta
 		.sort((left, right) => compareEngineVersions(right.version!.parts, left.version!.parts))[0];
 }
 
+/**
+ * Подходит ли проекту движок машины. Для opm `ВерсияСреды` — наименьшая версия,
+ * поэтому подходит движок не ниже неё. Движок, чью версию узнать не удалось,
+ * остаётся: сравнить его не с чем.
+ *
+ * @param version - Версия движка машины
+ * @param required - `ВерсияСреды` проекта
+ */
+export function machineEngineFits(version: EngineVersion | undefined, required: string | undefined): boolean {
+	const wanted = required === undefined ? undefined : parseEngineVersion(required);
+	return wanted === undefined || version === undefined || engineVersionSupported(version.parts, wanted.parts);
+}
+
 /** Откуда взялся движок проекта. */
-export type EngineSource = 'path' | 'version' | 'packagedef' | 'ovm' | 'system';
+export type EngineSource = 'path' | 'chosen' | 'packagedef' | 'ovm' | 'system';
 
 /** Подписи источников движка: для сводки окружения и выбора версии. */
 export const ENGINE_SOURCE_LABELS: Readonly<Record<EngineSource, string>> = {
 	path: 'настройка components.path.oscript',
-	version: 'настройка components.version.oscript',
+	chosen: 'вручную',
 	packagedef: 'ВерсияСреды в packagedef',
 	ovm: 'текущая установка OVM',
 	system: 'PATH',

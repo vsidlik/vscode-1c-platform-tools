@@ -66,18 +66,6 @@ export function getOvmBinDir(): string {
 }
 
 /**
- * Полный путь к бинарю инструмента OneScript (oscript и т. п.) в установке OVM.
- * На Windows добавляется расширение `.exe`.
- *
- * @param name - Имя инструмента без расширения (например, 'oscript')
- * @returns Абсолютный путь к исполняемому файлу в каталоге bin OVM
- */
-export function getOvmBinaryPath(name: string): string {
-	const binary = process.platform === 'win32' ? `${name}.exe` : name;
-	return path.join(getOvmBinDir(), binary);
-}
-
-/**
  * Возможные пути запускаемого файла opm в каталоге bin установки OneScript.
  *
  * В дистрибутиве OneScript opm — не exe, а обёртка над скриптом: на Windows
@@ -148,6 +136,9 @@ export function envName(env: NodeJS.ProcessEnv, name: string): string {
 	return existing ?? name;
 }
 
+/** Переменные с каталогом bin выбранной установки OneScript, см. {@link withSelectedEngine}. */
+export const ENGINE_BIN_VARIABLES = ['OVM_OSCRIPTBIN', 'OSCRIPTBIN'] as const;
+
 /**
  * Окружение дочернего процесса с выбранной установкой OneScript.
  *
@@ -168,7 +159,8 @@ export function withSelectedEngine(env: NodeJS.ProcessEnv, binDir: string | unde
 		return env;
 	}
 	const result = withBinDirFirst(env, binDir);
-	result[envName(result, 'OVM_OSCRIPTBIN')] = binDir;
-	result[envName(result, 'OSCRIPTBIN')] = binDir;
+	for (const name of ENGINE_BIN_VARIABLES) {
+		result[envName(result, name)] = binDir;
+	}
 	return result;
 }
