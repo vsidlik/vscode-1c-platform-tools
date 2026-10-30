@@ -27,21 +27,50 @@ import { formatRunSummary, readRunSummary } from './runReportSummary';
 
 const log = logger.scope('testing');
 
-/** Прогоны агента по корню проекта: они идут без задачи VS Code, и в списке задач их не видно. */
-const agentRuns = new Set<string>();
+/**
+ * Идущие прогоны по ключу корня проекта. У прогона агента здесь его отмена: он
+ * идёт без задачи VS Code, и остановить его иначе нечем.
+ */
+const runs = new Map<string, vscode.CancellationTokenSource | undefined>();
 
 /**
- * Идут ли уже тесты OneScript проекта, прогоном агента или задачей: два прогона
- * одного проекта пишут один отчёт.
+ * Идут ли уже тесты OneScript проекта, прогоном из расширения или задачей,
+ * запущенной заново: два прогона одного проекта пишут один отчёт.
  *
- * @param root - Корень проекта
+ * @param key - Ключ корня проекта
  * @param title - Имя задачи прогона
  */
-function testsRunning(root: string, title: string): boolean {
-	const key = projectRootKey(root);
-	return agentRuns.has(key) || vscode.tasks.taskExecutions.some(({ task }) =>
+function testsRunning(key: string, title: string): boolean {
+	return runs.has(key) || vscode.tasks.taskExecutions.some(({ task }) =>
 		task.name === title && typeof task.definition.project === 'string' && projectRootKey(task.definition.project) === key
 	);
+}
+
+/**
+ * Отказ второму прогону: агенту ответ, человеку сообщение, а прогон агента он
+ * может остановить.
+ *
+ * @param key - Ключ корня проекта
+ * @param opts - Опции вызова
+ */
+function refuseSecondRun(key: string, opts?: CommandExecutionOptions): StructuredCommandResult | undefined {
+	const message = 'Тесты OneScript этого проекта уже идут';
+	log.warn(message);
+	if (opts?.wait === true) {
+		return { success: false, exitCode: 1, stdout: '', stderr: message };
+	}
+	const agentRun = runs.get(key);
+	if (agentRun === undefined) {
+		void vscode.window.showWarningMessage(message);
+		return undefined;
+	}
+	const stop = 'Остановить';
+	void vscode.window.showWarningMessage('Тесты OneScript этого проекта уже запустил агент.', stop).then((answer) => {
+		if (answer === stop) {
+			agentRun.cancel();
+		}
+	});
+	return undefined;
 }
 
 /** Аргументы раннера и отчёт, который он напишет. */
@@ -93,15 +122,39 @@ export async function runOneScriptTests(
 		void vscode.window.showWarningMessage(message);
 		return;
 	}
-	if (testsRunning(root, title)) {
-		const message = 'Тесты OneScript этого проекта уже идут';
-		log.warn(message);
-		if (opts?.wait === true) {
-			return { success: false, exitCode: 1, stdout: '', stderr: message };
-		}
-		void vscode.window.showWarningMessage(message);
-		return;
+	const key = projectRootKey(root);
+	if (testsRunning(key, title)) {
+		return refuseSecondRun(key, opts);
 	}
+	// Отметка ставится до первого ожидания: параллельный вызов её уже увидит
+	const cancellation = opts?.wait === true ? new vscode.CancellationTokenSource() : undefined;
+	runs.set(key, cancellation);
+	try {
+		return await runAndReport(vrunner, root, testsDir, title, opts, cancellation?.token);
+	} finally {
+		runs.delete(key);
+		cancellation?.dispose();
+	}
+}
+
+/**
+ * Прогон и его итог: агенту процессом без окон, человеку задачей VS Code.
+ *
+ * @param vrunner - Менеджер инструментов проекта
+ * @param root - Корень проекта
+ * @param testsDir - Абсолютный каталог тестов
+ * @param title - Имя задачи прогона
+ * @param opts - Опции вызова
+ * @param token - Отмена прогона агента
+ */
+async function runAndReport(
+	vrunner: VRunnerManager,
+	root: string,
+	testsDir: string,
+	title: string,
+	opts: CommandExecutionOptions | undefined,
+	token: vscode.CancellationToken | undefined
+): Promise<StructuredCommandResult | void> {
 	const reportsDir = path.resolve(root, vrunner.getOutPath(), BUILD_SUBDIRS.onescript);
 	await fs.mkdir(reportsDir, { recursive: true });
 	const runner = oneScriptRunnerProgram(root);
@@ -115,21 +168,29 @@ export async function runOneScriptTests(
 	let output = '';
 	if (opts?.wait === true) {
 		// Агенту без задачи: уже идущая задача с тем же именем спросила бы человека, какую остановить
-		const key = projectRootKey(root);
-		agentRuns.add(key);
-		try {
-			const result = await runCancellableCommand(command, { cwd: root, env });
-			exitCode = result.exitCode;
-			output = `${result.stdout}${result.stderr}`.trim();
-		} finally {
-			agentRuns.delete(key);
+		const result = await runCancellableCommand(command, { cwd: root, env, token });
+		output = `${result.stdout}${result.stderr}`.trim();
+		if (result.cancelled) {
+			return { success: false, exitCode: result.exitCode, stdout: output, stderr: 'Прогон тестов OneScript остановил пользователь' };
 		}
+		exitCode = result.exitCode;
 	} else {
 		exitCode = await new Promise<number>((resolve) => {
-			const task = createVRunnerTask({ name: title, command, cwd: root, env, root, exitCallback: resolve });
+			let ended: vscode.Disposable | undefined;
+			const finish = (code: number) => {
+				ended?.dispose();
+				resolve(code);
+			};
+			const task = createVRunnerTask({ name: title, command, cwd: root, env, root, exitCallback: finish });
+			// Задача, чей терминал так и не открылся, о выходе не сообщит: конец ловим и по событию
+			ended = vscode.tasks.onDidEndTask((event) => {
+				if (event.execution.task === task) {
+					finish(1);
+				}
+			});
 			vscode.tasks.executeTask(task).then(undefined, (error: Error) => {
 				log.error(`Задача тестов OneScript не запустилась: ${error.message}`);
-				resolve(1);
+				finish(1);
 			});
 		});
 	}

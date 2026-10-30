@@ -485,7 +485,8 @@ export function favoritesFromElsewhere<T extends { command: string; sectionType?
 
 /**
  * Избранное после окна настройки. Избранное общее для всех проектов, а окно
- * показывает не всё: то, чего в окне не было, остаётся как было.
+ * показывает не всё: то, чего в окне не было, остаётся как было. Записи стоят
+ * на своих местах, снятые убираются, новые отмеченные идут в конец.
  *
  * @param current - Сохранённое избранное
  * @param chosen - Отмеченное в окне
@@ -496,7 +497,21 @@ export function mergeFavorites<T extends { command: string; arguments?: unknown[
 	chosen: readonly T[],
 	offered: ReadonlySet<string>
 ): T[] {
-	return [...current.filter((entry) => !offered.has(favoriteKey(entry))), ...chosen];
+	const picked = new Map(chosen.map((entry) => [favoriteKey(entry), entry]));
+	const merged: T[] = [];
+	for (const entry of current) {
+		const key = favoriteKey(entry);
+		if (!offered.has(key)) {
+			merged.push(entry);
+			continue;
+		}
+		const kept = picked.get(key);
+		if (kept !== undefined) {
+			merged.push(kept);
+			picked.delete(key);
+		}
+	}
+	return [...merged, ...picked.values()];
 }
 
 /**

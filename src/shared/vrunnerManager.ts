@@ -437,11 +437,12 @@ export class VRunnerManager {
 
 	/**
 	 * Ключ найденного движка: проекты с одинаковым выбором делят один движок.
-	 * Цель `current` OVM тоже в ключе: после `ovm use` движок машины ищется
-	 * заново и снова сверяется с ВерсияСреды.
+	 * Без явного выбора в ключе и цель `current` OVM: после `ovm use` движок
+	 * машины ищется заново и снова сверяется с ВерсияСреды.
 	 */
 	private engineKey(request: EngineRequest = this.engineRequest()): string {
-		return JSON.stringify([request.path, request.version, request.required ?? '', getOvmCurrentTarget()]);
+		const machine = request.path === '' && request.version === '' ? getOvmCurrentTarget() : '';
+		return JSON.stringify([request.path, request.version, request.required ?? '', machine]);
 	}
 
 	/** Движок, найденный для выбора проекта вызова. */
@@ -2089,6 +2090,10 @@ export class VRunnerManager {
 		const finalArgs = options?.appendOverrides === false ? args : this.appendActiveOverrides(args);
 		const cwd = options?.cwd || this.getEffectiveRoot() || os.homedir();
 		const useDocker = await this.shouldUseDocker();
+		// Окружение задачи берёт движок проекта из найденного: после `ovm use` его ищут заново
+		if (!useDocker) {
+			await this.checkOscriptAvailable();
+		}
 
 		const built = this.buildExecRun(finalArgs, useDocker, options?.translateRaw === true);
 		if ('error' in built) {
@@ -2551,6 +2556,10 @@ export class VRunnerManager {
 			args = this.appendActiveOverrides(args);
 		}
 		const useDocker = await this.shouldUseDocker();
+		// Окружение прогона берёт движок проекта из найденного: после `ovm use` его ищут заново
+		if (!useDocker) {
+			await this.checkOscriptAvailable();
+		}
 		const built = this.buildExecRun(args, useDocker);
 		if ('error' in built) {
 			return {

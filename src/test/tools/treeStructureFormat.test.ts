@@ -133,4 +133,17 @@ suite('дерево команд под вид проекта', () => {
 		assert.deepStrictEqual(favoritesFromElsewhere([build], new Set(), treeTraitsOf('designer', false)), []);
 		assert.deepStrictEqual(mergeFavorites([build, install], [], new Set([favoriteKey(install)])), [build]);
 	});
+
+	test('избранное: окно без правок порядок не меняет, новые отмеченные идут в конец', () => {
+		const install = { command: '1c-platform-tools.dependencies.install', sectionType: 'dependency' };
+		const load = { command: '1c-platform-tools.cf.load', sectionType: 'configuration' };
+		const docs = { command: '1c-platform-tools.help.openDocs', sectionType: 'help' };
+		const build = { command: '1c-platform-tools.package.build', sectionType: 'package' };
+		const current = [install, load, docs];
+		const offered = new Set([install, docs, build].map(favoriteKey));
+
+		// Окно у проекта OneScript отметило те же install и docs в своём порядке
+		assert.deepStrictEqual(mergeFavorites(current, [docs, install], offered), current);
+		assert.deepStrictEqual(mergeFavorites(current, [docs, build], offered), [load, docs, build]);
+	});
 });
