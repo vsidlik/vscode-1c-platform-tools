@@ -9,8 +9,11 @@
  * Правка та же, что у дочерних процессов, см. `withSelectedEngine`: каталог первым
  * в PATH и в `OVM_OSCRIPTBIN`, по которому автозапуск cmd после `ovm use` снова
  * ставит в PATH установку машины, и в `OSCRIPTBIN`, куда opm кладёт команды пакетов.
- * Строки, которые `ovm use` пишет в `.bashrc` и профиль PowerShell, выполняются
+ * Строки, которые `ovm use` пишет в `.bashrc` на Linux и macOS, выполняются
  * после правки, поэтому с интеграцией оболочки VS Code повторяет её после них.
+ * На Windows повтора нет: интеграция bash разбирает значение через `echo -e`, и
+ * обратные слэши путей портятся, а автозапуск cmd и профиль PowerShell и так
+ * берут каталог из `OVM_OSCRIPTBIN`.
  *
  * @module terminalEnv
  */
@@ -32,8 +35,11 @@ let collection: vscode.EnvironmentVariableCollection | undefined = undefined;
  */
 let appliedBinDir: string | undefined | null = null;
 
-/** Правка и при запуске терминала, и после файлов запуска оболочки. */
-const MUTATOR_OPTIONS: vscode.EnvironmentVariableMutatorOptions = { applyAtProcessCreation: true, applyAtShellIntegration: true };
+/** Правка при запуске терминала, а на Linux и macOS ещё и после файлов запуска оболочки. */
+const MUTATOR_OPTIONS: vscode.EnvironmentVariableMutatorOptions = {
+	applyAtProcessCreation: true,
+	applyAtShellIntegration: process.platform !== 'win32',
+};
 
 /**
  * Подключает коллекцию окружения расширения.

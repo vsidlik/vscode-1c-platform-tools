@@ -1,7 +1,9 @@
 import * as assert from 'node:assert';
 import {
 	TREE_GROUPS,
+	favoriteKey,
 	favoriteVisibleFor,
+	favoritesFromElsewhere,
 	groupCommandsFor,
 	groupVisibleFor,
 	mergeFavorites,
@@ -115,15 +117,20 @@ suite('дерево команд под вид проекта', () => {
 		assert.strictEqual(favoriteVisibleFor('1c-platform-tools.tasks.runOscript', 'oscriptTasks', oneScript), true);
 	});
 
-	test('избранное: сохранение у проекта OneScript не теряет команды проекта 1С и обратно', () => {
+	test('избранное: сохранение не теряет то, чего окно не показывало', () => {
 		const load = { command: '1c-platform-tools.cf.load', sectionType: 'configuration' };
 		const install = { command: '1c-platform-tools.dependencies.install', sectionType: 'dependency' };
 		const build = { command: '1c-platform-tools.package.build', sectionType: 'package' };
-		const pipeline = { command: '1c-platform-tools.pipelines.run', sectionType: 'pipelines' };
+		const release = { command: '1c-platform-tools.pipelines.run', sectionType: 'pipelines', arguments: [{ pipeline: 'release' }] };
+		const nightly = { command: '1c-platform-tools.pipelines.run', sectionType: 'pipelines', arguments: [{ pipeline: 'nightly' }] };
 
-		// Окно у проекта OneScript показало install, build и цепочку: отмечена только сборка
-		assert.deepStrictEqual(mergeFavorites([load, install, pipeline], [build], oneScript), [load, build]);
-		// У проекта 1С без пакета команда сборки в окне не видна и тоже остаётся
-		assert.deepStrictEqual(mergeFavorites([build, install], [], treeTraitsOf('designer', false)), [build]);
+		// Окно у проекта OneScript построило install, build и цепочку release: отмечена только сборка
+		const offered = new Set([install, build, release].map(favoriteKey));
+		assert.deepStrictEqual(mergeFavorites([load, install, release, nightly], [build], offered), [load, nightly, build]);
+		// Цепочку другого проекта дерево показывает, а окно из проекта не строит: её окно показывает отдельно
+		assert.deepStrictEqual(favoritesFromElsewhere([load, install, release, nightly], offered, oneScript), [nightly]);
+		// У проекта 1С без пакета команды сборки в окне нет: она не из другого проекта, а другого вида и остаётся
+		assert.deepStrictEqual(favoritesFromElsewhere([build], new Set(), treeTraitsOf('designer', false)), []);
+		assert.deepStrictEqual(mergeFavorites([build, install], [], new Set([favoriteKey(install)])), [build]);
 	});
 });

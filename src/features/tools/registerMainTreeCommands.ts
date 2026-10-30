@@ -7,7 +7,7 @@ import { OscriptTasksCommands } from '../../commands/oscriptTasksCommands';
 import { SetVersionCommands } from '../../commands/setVersionCommands';
 import { WorkspaceTasksCommands } from '../../commands/workspaceTasksCommands';
 import { PlatformTreeDataProvider } from './treeViewProvider';
-import { mergeFavorites, type TreeProjectTrait } from './treeStructure';
+import { favoriteKey, favoritesFromElsewhere, mergeFavorites, type TreeProjectTrait } from './treeStructure';
 import {
 	getPickableCommandsByGroup,
 	getFavorites,
@@ -362,9 +362,7 @@ export function registerMainTreeCommands(
 				return;
 			}
 			const currentFavorites = getFavorites(context);
-			const favoriteKeys = new Set(
-				currentFavorites.map((favorite) => `${favorite.command}|${JSON.stringify(favorite.arguments ?? [])}`)
-			);
+			const favoriteKeys = new Set(currentFavorites.map(favoriteKey));
 			const traits = treeDataProvider.projectTraits();
 			const items = await buildFavoritesQuickPickItems(
 				favoriteKeys,
@@ -372,6 +370,28 @@ export function registerMainTreeCommands(
 				oscriptTasksCommands,
 				traits
 			);
+			const offered = new Set(
+				(items as FavoritesSelectableItem[]).filter((item) => item.command !== undefined).map(favoriteKey)
+			);
+			const elsewhere = favoritesFromElsewhere(currentFavorites, offered, traits);
+			if (elsewhere.length > 0) {
+				items.push(
+					{ label: 'Из других проектов', kind: vscode.QuickPickItemKind.Separator },
+					...elsewhere.map((favorite) => ({
+						label: favorite.title,
+						description: favorite.groupLabel ?? favorite.command,
+						picked: true,
+						command: favorite.command,
+						title: favorite.title,
+						groupLabel: favorite.groupLabel,
+						sectionType: favorite.sectionType,
+						arguments: favorite.arguments,
+					}) as FavoritesSelectableItem)
+				);
+				for (const favorite of elsewhere) {
+					offered.add(favoriteKey(favorite));
+				}
+			}
 
 			const selected = await vscode.window.showQuickPick(items, {
 				canPickMany: true,
@@ -382,7 +402,7 @@ export function registerMainTreeCommands(
 				return;
 			}
 			const chosen = toFavoriteEntries(selected);
-			await setFavorites(context, mergeFavorites(currentFavorites, chosen, traits));
+			await setFavorites(context, mergeFavorites(currentFavorites, chosen, offered));
 			treeDataProvider.refresh();
 			log.info(`Избранное обновлено: ${chosen.length} команд`);
 			notifyQuiet(

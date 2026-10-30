@@ -458,19 +458,45 @@ export function favoriteVisibleFor(command: string, sectionType: string | undefi
 }
 
 /**
- * Избранное после окна настройки. Окно показывает команды проекта этого вида, а
- * избранное общее для всех проектов: команды, которых у проекта нет, остаются.
+ * Ключ избранного: команда вместе с аргументами.
+ *
+ * @param entry - Запись избранного или пункт окна настройки
+ */
+export function favoriteKey(entry: { command: string; arguments?: unknown[] }): string {
+	return `${entry.command}|${JSON.stringify(entry.arguments ?? [])}`;
+}
+
+/**
+ * Избранное, которое дерево проекта показывает, а окно настройки из проекта не
+ * строит: цепочки, задачи и обработки других проектов. Окно показывает их
+ * отдельно, иначе их нельзя было бы ни оставить, ни убрать.
+ *
+ * @param current - Сохранённое избранное
+ * @param offered - Ключи {@link favoriteKey} пунктов, построенных окном
+ * @param traits - Черты проекта
+ */
+export function favoritesFromElsewhere<T extends { command: string; sectionType?: string; arguments?: unknown[] }>(
+	current: readonly T[],
+	offered: ReadonlySet<string>,
+	traits: ReadonlySet<TreeProjectTrait>
+): T[] {
+	return current.filter((entry) => favoriteVisibleFor(entry.command, entry.sectionType, traits) && !offered.has(favoriteKey(entry)));
+}
+
+/**
+ * Избранное после окна настройки. Избранное общее для всех проектов, а окно
+ * показывает не всё: то, чего в окне не было, остаётся как было.
  *
  * @param current - Сохранённое избранное
  * @param chosen - Отмеченное в окне
- * @param traits - Черты проекта
+ * @param offered - Ключи {@link favoriteKey} всех пунктов окна
  */
-export function mergeFavorites<T extends { command: string; sectionType?: string }>(
+export function mergeFavorites<T extends { command: string; arguments?: unknown[] }>(
 	current: readonly T[],
 	chosen: readonly T[],
-	traits: ReadonlySet<TreeProjectTrait>
+	offered: ReadonlySet<string>
 ): T[] {
-	return [...current.filter((entry) => !favoriteVisibleFor(entry.command, entry.sectionType, traits)), ...chosen];
+	return [...current.filter((entry) => !offered.has(favoriteKey(entry))), ...chosen];
 }
 
 /**

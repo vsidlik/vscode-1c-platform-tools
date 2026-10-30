@@ -18,6 +18,7 @@ import { notifyQuiet, notifyQuietFailure } from '../../shared/notify';
 import { oneScriptTestsPath } from '../../shared/oneScriptLayout';
 import { BUILD_SUBDIRS } from '../../shared/pathDefaults';
 import type { VRunnerManager } from '../../shared/vrunnerManager';
+import { projectRootKey } from '../../shared/workspaceProjects';
 import { buildProcessCommand } from '../../utils/commandUtils';
 import { createVRunnerTask } from '../tasks/vrunnerTask';
 import { getOneScriptTestsCommandName } from '../tools/commandNames';
@@ -25,6 +26,23 @@ import { oneScriptRunnerProgram, type OneScriptRunner } from './adapters/onescri
 import { formatRunSummary, readRunSummary } from './runReportSummary';
 
 const log = logger.scope('testing');
+
+/** Прогоны агента по корню проекта: они идут без задачи VS Code, и в списке задач их не видно. */
+const agentRuns = new Set<string>();
+
+/**
+ * Идут ли уже тесты OneScript проекта, прогоном агента или задачей: два прогона
+ * одного проекта пишут один отчёт.
+ *
+ * @param root - Корень проекта
+ * @param title - Имя задачи прогона
+ */
+function testsRunning(root: string, title: string): boolean {
+	const key = projectRootKey(root);
+	return agentRuns.has(key) || vscode.tasks.taskExecutions.some(({ task }) =>
+		task.name === title && typeof task.definition.project === 'string' && projectRootKey(task.definition.project) === key
+	);
+}
 
 /** Аргументы раннера и отчёт, который он напишет. */
 export interface OneScriptTestsCall {
@@ -75,6 +93,15 @@ export async function runOneScriptTests(
 		void vscode.window.showWarningMessage(message);
 		return;
 	}
+	if (testsRunning(root, title)) {
+		const message = 'Тесты OneScript этого проекта уже идут';
+		log.warn(message);
+		if (opts?.wait === true) {
+			return { success: false, exitCode: 1, stdout: '', stderr: message };
+		}
+		void vscode.window.showWarningMessage(message);
+		return;
+	}
 	const reportsDir = path.resolve(root, vrunner.getOutPath(), BUILD_SUBDIRS.onescript);
 	await fs.mkdir(reportsDir, { recursive: true });
 	const runner = oneScriptRunnerProgram(root);
@@ -88,9 +115,15 @@ export async function runOneScriptTests(
 	let output = '';
 	if (opts?.wait === true) {
 		// Агенту без задачи: уже идущая задача с тем же именем спросила бы человека, какую остановить
-		const result = await runCancellableCommand(command, { cwd: root, env });
-		exitCode = result.exitCode;
-		output = `${result.stdout}${result.stderr}`.trim();
+		const key = projectRootKey(root);
+		agentRuns.add(key);
+		try {
+			const result = await runCancellableCommand(command, { cwd: root, env });
+			exitCode = result.exitCode;
+			output = `${result.stdout}${result.stderr}`.trim();
+		} finally {
+			agentRuns.delete(key);
+		}
 	} else {
 		exitCode = await new Promise<number>((resolve) => {
 			const task = createVRunnerTask({ name: title, command, cwd: root, env, root, exitCallback: resolve });

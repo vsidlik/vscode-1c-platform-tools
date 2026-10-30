@@ -5,6 +5,9 @@ import { initTerminalEnv, setTerminalOscriptBinDir } from '../../shared/terminal
 
 const BIN = path.resolve('/ovm/2.2.1/bin');
 
+/** Повтор после файлов запуска оболочки: на Windows интеграция bash портит пути. */
+const AFTER_SHELL = process.platform === 'win32' ? '' : ' после оболочки';
+
 /** Коллекция окружения, которая записывает правки. */
 function recordingCollection(): { calls: string[]; collection: vscode.EnvironmentVariableCollection } {
 	const calls: string[] = [];
@@ -19,16 +22,16 @@ function recordingCollection(): { calls: string[]; collection: vscode.Environmen
 }
 
 suite('окружение новых терминалов', () => {
-	test('движок проекта первым в PATH и в переменных OVM и opm, и после файлов запуска оболочки', () => {
+	test('движок проекта первым в PATH и в переменных OVM и opm, на Linux и macOS и после файлов запуска оболочки', () => {
 		const { calls, collection } = recordingCollection();
 		initTerminalEnv(collection);
 
 		setTerminalOscriptBinDir(BIN);
 
 		assert.deepStrictEqual(calls, [
-			`prepend PATH ${BIN}${path.delimiter} после оболочки`,
-			`replace OVM_OSCRIPTBIN ${BIN} после оболочки`,
-			`replace OSCRIPTBIN ${BIN} после оболочки`,
+			`prepend PATH ${BIN}${path.delimiter}${AFTER_SHELL}`,
+			`replace OVM_OSCRIPTBIN ${BIN}${AFTER_SHELL}`,
+			`replace OSCRIPTBIN ${BIN}${AFTER_SHELL}`,
 		]);
 	});
 
