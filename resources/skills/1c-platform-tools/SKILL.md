@@ -115,12 +115,19 @@ description: "Операции с платформой 1С в этом прое�
 | Создать packagedef | `1c-platform-tools.dependencies.initializePackagedef` | `deps_initPackagedef` |
 | Создать каталоги проекта | `1c-platform-tools.dependencies.initializeProjectStructure` | `deps_initProjStruct` |
 | Установить OneScript | `1c-platform-tools.dependencies.installOscript` | `deps_installOscript` |
+| Выбрать версию OneScript проекта | `1c-platform-tools.dependencies.selectOscript` | нет |
 | Обновить opm | `1c-platform-tools.dependencies.updateOpm` | `deps_updateOpm` |
 | Установить зависимости | `1c-platform-tools.dependencies.install` | `deps_install` |
 | Удалить зависимости | `1c-platform-tools.dependencies.remove` | `deps_remove` |
 | Настроить Git | `1c-platform-tools.dependencies.setupGit` | нет |
+| Собрать пакет OneScript | `1c-platform-tools.package.build` | `package_build` |
+| Установить собранный пакет | `1c-platform-tools.package.install` | `package_install` |
 
 Зависимости ставь через `deps_install`. Если oscript уже есть, `deps_installOscript` не вызывай: он ставит интерпретатор. К `opm install` в терминале переходи, когда MCP недоступен. Git-мастер агенту недоступен: настраивай git командами git.
+
+Движок OneScript у каждого проекта свой: установка OVM с версией из настройки `components.version.oscript`, без неё по `ВерсияСреды` в `packagedef`, иначе текущая установка OVM. `deps_installOscript` ставит версию рядом с остальными, не переключая машину. Версию проекта агент задаёт настройкой `components.version.oscript`: выбор версии в палитре делает человек.
+
+`package_build` собирает `<Имя>-<Версия>.ospx` в `build/out/ospx`, `package_install` ставит собранный пакет в движок проекта. Публикацию `opm push` делает CI.
 
 ## Запуск, сервер, отладка
 
@@ -151,6 +158,7 @@ description: "Операции с платформой 1С в этом прое�
 | Vanessa | `1c-platform-tools.test.vanessa` | `test_vanessa` |
 | YAxUnit | `1c-platform-tools.test.yaxunit` | `test_yaxunit` |
 | Мутационное тестирование | `1c-platform-tools.test.mutatos` | `test_mutatos` |
+| Тесты OneScript (OneUnit, 1testrunner) | `1c-platform-tools.test.onescript` | `test_onescript` |
 | Синтаксический контроль | `1c-platform-tools.syntaxCheck.run` | `syntaxCheck_run` |
 | Обновить Problems | `1c-platform-tools.syntaxCheck.refresh` | `syntaxCheck_refresh` |
 | Очистить Problems | `1c-platform-tools.syntaxCheck.clear` | `syntaxCheck_clear` |

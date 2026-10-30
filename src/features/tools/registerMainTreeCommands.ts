@@ -7,6 +7,7 @@ import { OscriptTasksCommands } from '../../commands/oscriptTasksCommands';
 import { SetVersionCommands } from '../../commands/setVersionCommands';
 import { WorkspaceTasksCommands } from '../../commands/workspaceTasksCommands';
 import { PlatformTreeDataProvider } from './treeViewProvider';
+import type { TreeProjectTrait } from './treeStructure';
 import {
 	getPickableCommandsByGroup,
 	getFavorites,
@@ -191,9 +192,10 @@ function appendStaticGroupCommands(
 async function buildFavoritesQuickPickItems(
 	favoriteKeys: Set<string>,
 	setVersionCommands: SetVersionCommands,
-	oscriptTasksCommands: OscriptTasksCommands
+	oscriptTasksCommands: OscriptTasksCommands,
+	traits: ReadonlySet<TreeProjectTrait>
 ): Promise<vscode.QuickPickItem[]> {
-	const groups = getPickableCommandsByGroup();
+	const groups = getPickableCommandsByGroup(traits);
 	const items: vscode.QuickPickItem[] = [];
 
 	for (const group of groups) {
@@ -366,7 +368,8 @@ export function registerMainTreeCommands(
 			const items = await buildFavoritesQuickPickItems(
 				favoriteKeys,
 				setVersionCommands,
-				oscriptTasksCommands
+				oscriptTasksCommands,
+				treeDataProvider.projectTraits()
 			);
 
 			const selected = await vscode.window.showQuickPick(items, {
@@ -392,7 +395,7 @@ export function registerMainTreeCommands(
 			showNot1CProjectMessage();
 			return;
 		}
-		const groups = getHideableToolGroups();
+		const groups = getHideableToolGroups(treeDataProvider.projectTraits());
 		const hidden = getHiddenToolGroups(context);
 		const items: GroupVisibilityItem[] = groups.map((group) => ({
 			label: group.label,
@@ -408,9 +411,12 @@ export function registerMainTreeCommands(
 			return;
 		}
 		const visible = new Set((selected as GroupVisibilityItem[]).map((item) => item.sectionType));
-		const newHidden = groups
-			.map((group) => group.sectionType)
-			.filter((sectionType) => !visible.has(sectionType));
+		const offered = new Set(groups.map((group) => group.sectionType));
+		// Группы, которых у проекта этого вида нет, остаются скрытыми, как были
+		const newHidden = [
+			...[...hidden].filter((sectionType) => !offered.has(sectionType)),
+			...groups.map((group) => group.sectionType).filter((sectionType) => !visible.has(sectionType)),
+		];
 		await setHiddenToolGroups(context, newHidden);
 		await syncHiddenToolGroupsContext(context);
 		treeDataProvider.refresh();

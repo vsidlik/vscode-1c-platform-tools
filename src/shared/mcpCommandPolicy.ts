@@ -80,6 +80,7 @@ const WITHOUT_SYNC_RESULT_PREFIXES = [
 	`${COMMAND_PREFIX}dependencies.`,
 	`${COMMAND_PREFIX}components.update`,
 	`${COMMAND_PREFIX}tasks.`,
+	`${COMMAND_PREFIX}package.`,
 ];
 
 /** Команды, которые исход операции возвращают, хотя их префикс в списке выше. */
@@ -113,6 +114,8 @@ const HIDDEN_EXACT = [
 	// Обновление внешних компонентов: спрашивает список галочками и загружает
 	// выбранное. Ответить на такой вопрос агент не может
 	`${COMMAND_PREFIX}components.update`,
+	// Выбор версии OneScript из установок OVM: агент пишет настройку components.version.oscript
+	`${COMMAND_PREFIX}dependencies.selectOscript`,
 	// Действия над строкой вида проектов; packagedef агент создаёт командой project.initialize
 	`${COMMAND_PREFIX}project.makeCurrent`,
 	`${COMMAND_PREFIX}project.separateConfiguration`,

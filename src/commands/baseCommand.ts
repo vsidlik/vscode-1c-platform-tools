@@ -243,6 +243,7 @@ export abstract class BaseCommand {
 		const oscriptOk = await this.vrunner.checkOscriptAvailable();
 		const opmOk = await this.vrunner.checkOpmAvailable();
 		if (oscriptOk && opmOk) {
+			void this.vrunner.warnIfEngineUnfit();
 			return true;
 		}
 		const action = await vscode.window.showWarningMessage(
