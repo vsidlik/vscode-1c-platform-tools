@@ -23,6 +23,7 @@ import * as vscode from 'vscode';
 import { BSP_REGISTRATION_MARKER, buildBspRegistration } from './bspRegistration';
 import {
 	ensureMdSparrowRuntime,
+	type MdSparrowRuntime,
 } from './mdSparrowBootstrap';
 import { parseMdBoilerplateKindFromCommandArgs } from './metadataBoilerplateNames';
 import {
@@ -81,6 +82,7 @@ import {
 	supportEnabled,
 } from './mdSparrowParams';
 import { openDcsEditorPanel } from './dcsEditorPanel';
+import { dcsTemplateMutationParams, resolveDcsOwnerTarget, type DcsTemplateOp } from './dcsTargets';
 import { openSpreadsheetPanel } from '../spreadsheet/openSpreadsheetPanel';
 import { classifyTemplateContent, findTemplateContent } from '../spreadsheet/templateContent';
 import { loadProjectMetadataTree } from './metadataTreeService';
@@ -92,12 +94,14 @@ import {
 	MetadataErrorTreeItem,
 	MetadataNoticeTreeItem,
 	MetadataLeafTreeItem,
+	MetadataMdSubgroupTreeItem,
 	MetadataObjectNodeTreeItem,
 	MetadataObjectSectionTreeItem,
 	MetadataSourceTreeItem,
 	childNodeSupport,
 	metadataCommandConfiguration,
 	metadataCommandRoot,
+	metadataObjectTypeHasMainDcs,
 	objectModuleFilePath,
 	objectModuleKindsForType,
 	type MetadataTreeDataProvider,
@@ -483,6 +487,192 @@ export function registerMetadataFeature(
 			return;
 		}
 		notifyQuiet(`Форма «${name.trim()}» создана`);
+		void vscode.commands.executeCommand('1c-platform-tools.metadata.refresh');
+	}
+
+	/** Владелец нового макета СКД из узла дерева: объект с разделом «Макеты» или конфигурация. */
+	interface DcsTemplateOwner {
+		/** Описание владельца, в которое пишется состав макетов: XML объекта либо Configuration.xml (.mdo у EDT). */
+		ownerXml: string;
+		/** Имя объекта-владельца; у общего макета пусто — заголовок берётся из имени макета. */
+		ownerName: string;
+		/** Описание нового макета: по нему ищется файл содержимого для открытия редактора. */
+		templateDescriptorOf(name: string): string;
+		/** Имя макета в поиске содержимого: у общего макета описание уже само о макете. */
+		templateNameFor(name: string): string | undefined;
+		/** Галка «основная схема» задаётся только владельцам со свойством MainDataCompositionSchema. */
+		askMakeMain: boolean;
+		support?: string;
+		configurationXmlAbs?: string;
+		metadataRootAbs?: string;
+	}
+
+	/** Разбирает узел дерева в владельца макета; undefined — узел не про макеты. */
+	function dcsTemplateOwnerOf(selected: vscode.TreeItem | undefined): DcsTemplateOwner | undefined {
+		if (
+			selected instanceof MetadataObjectSectionTreeItem
+			&& selected.sectionKind === 'templates'
+			&& selected.owner.resourceUri
+		) {
+			const ownerXml = selected.owner.resourceUri.fsPath;
+			return {
+				ownerXml,
+				ownerName: selected.owner.name,
+				templateDescriptorOf: () => ownerXml,
+				templateNameFor: (name) => name,
+				askMakeMain: metadataObjectTypeHasMainDcs(selected.owner.objectType),
+				support: selected.owner.support,
+				configurationXmlAbs: selected.owner.configurationXmlAbs,
+				metadataRootAbs: selected.owner.metadataRootAbs,
+			};
+		}
+		if (
+			selected instanceof MetadataMdSubgroupTreeItem
+			&& selected.subgroupId === 'common_commontemplate'
+			&& selected.configurationXmlAbs
+		) {
+			// Группа общих макетов: владелец — сама конфигурация
+			const configurationXml = selected.configurationXmlAbs;
+			const descriptorOf = (name: string): string =>
+				formatOfFile(configurationXml) === 'edt'
+					? // Configuration.mdo лежит в src/Configuration: общие макеты — соседний каталог src/CommonTemplates
+						path.join(path.dirname(path.dirname(configurationXml)), 'CommonTemplates', name, `${name}.mdo`)
+					: path.join(path.dirname(configurationXml), 'CommonTemplates', `${name}.xml`);
+			return {
+				ownerXml: configurationXml,
+				ownerName: '',
+				templateDescriptorOf: descriptorOf,
+				templateNameFor: () => undefined,
+				askMakeMain: false,
+				configurationXmlAbs: configurationXml,
+				metadataRootAbs: selected.metadataRootAbs,
+			};
+		}
+		return undefined;
+	}
+
+	/**
+	 * Создаёт или удаляет макет СКД у владельца в общей очереди правок: вкладка схемы того же
+	 * макета может в это время писать его содержимое.
+	 *
+	 * @returns Текст отказа для сообщения; undefined — правка выполнена
+	 */
+	async function mutateDcsTemplate(
+		ownerXml: string,
+		op: DcsTemplateOp,
+		name: string,
+		makeMain?: boolean
+	): Promise<string | undefined> {
+		const resolved = await resolveDcsOwnerTarget(ownerXml, undefined);
+		if ('error' in resolved) {
+			return resolved.error;
+		}
+		const owner = resolved.target;
+		let runtime: MdSparrowRuntime;
+		try {
+			runtime = await ensureMdSparrowRuntime(context);
+		} catch (error) {
+			return `Компонент md-sparrow недоступен. ${error instanceof Error ? error.message : String(error)}`;
+		}
+		const res = await runMdSparrowMutation(() =>
+			runMdSparrowParamsMutation(runtime, dcsTemplateMutationParams(op, owner, name, makeMain), { cwd: owner.cwd })
+		);
+		if (res.exitCode === 0) {
+			return undefined;
+		}
+		return res.stderr.trim() || res.stdout.trim() || `код ${res.exitCode}`;
+	}
+
+	/** Создаёт макет со схемой компоновки в описании владельца и открывает его редактор. */
+	async function addDcsTemplateFromTree(item?: vscode.TreeItem): Promise<void> {
+		const owner = dcsTemplateOwnerOf(item ?? metadataTreeView.selection[0]);
+		if (!owner) {
+			void vscode.window.showInformationMessage('Выберите раздел «Макеты» объекта или группу общих макетов.');
+			return;
+		}
+		if (refuseLockedBySupport(owner.support)) {
+			return;
+		}
+		const rawName = await vscode.window.showInputBox({
+			title: 'Новая схема компоновки данных',
+			placeHolder: 'Имя макета',
+			validateInput: (value) => (!value.trim() ? 'Введите имя.' : null),
+		});
+		if (!rawName) {
+			return;
+		}
+		const name = rawName.trim();
+		let makeMain: boolean | undefined;
+		if (owner.askMakeMain) {
+			const pick = await vscode.window.showQuickPick(
+				[
+					{ label: 'Да', description: 'Заполнить свойство «Основная схема компоновки данных»', main: true },
+					{ label: 'Нет', main: false },
+				],
+				{ placeHolder: 'Назначить макет основной схемой компоновки данных отчёта?' }
+			);
+			if (!pick) {
+				return;
+			}
+			makeMain = pick.main;
+		}
+		const refusal = await mutateDcsTemplate(owner.ownerXml, 'cf-dcs-template-add', name, makeMain);
+		if (refusal !== undefined) {
+			void vscode.window.showErrorMessage(`Не удалось создать макет. ${refusal}`.trim().slice(0, 400));
+			return;
+		}
+		notifyQuiet(`Макет «${name}» создан`);
+		void vscode.commands.executeCommand('1c-platform-tools.metadata.refresh');
+		// Сразу открываем редактор СКД нового макета: за созданием обычно следует наполнение
+		const content = await findTemplateContent(owner.templateDescriptorOf(name), owner.templateNameFor(name));
+		if (!content) {
+			void vscode.window.showInformationMessage(`Файл содержимого макета «${name}» не найден.`);
+			return;
+		}
+		const schema = owner.configurationXmlAbs
+			? await mdSparrowSchemaFlagFromConfigurationXml(owner.configurationXmlAbs)
+			: await mainSchemaFlag();
+		if (schema === undefined) {
+			return;
+		}
+		await openDcsEditorPanel(context, {
+			templateXmlFsPath: content,
+			title: owner.ownerName ? `${owner.ownerName}.${name}` : name,
+			cwd: owner.metadataRootAbs ?? path.dirname(owner.ownerXml),
+			schemaFlag: schema,
+			enqueueMutation: runMdSparrowMutation,
+		});
+	}
+
+	/** Удаляет макет СКД объекта вместе с файлами после подтверждения. */
+	async function removeDcsTemplateFromTree(item?: vscode.TreeItem): Promise<void> {
+		const selected = item ?? metadataTreeView.selection[0];
+		if (
+			!(selected instanceof MetadataObjectNodeTreeItem)
+			|| selected.nodeKind !== 'template'
+			|| !selected.owner.resourceUri
+		) {
+			void vscode.window.showInformationMessage('Выберите макет со схемой компоновки в дереве.');
+			return;
+		}
+		// У макета своё правило поддержки: разрешение на объект его не открывает
+		if (refuseLockedBySupport(childNodeSupport(selected.owner.support, selected.support, true), 'Макет')) {
+			return;
+		}
+		const answer = await vscode.window.showWarningMessage(
+			`Удалить макет «${selected.name}» вместе с файлами?`,
+			{ modal: true },
+			'Удалить'
+		);
+		if (answer !== 'Удалить') {
+			return;
+		}
+		const refusal = await mutateDcsTemplate(selected.owner.resourceUri.fsPath, 'cf-dcs-template-remove', selected.name);
+		if (refusal !== undefined) {
+			void vscode.window.showErrorMessage(`Не удалось удалить макет. ${refusal}`.trim().slice(0, 400));
+			return;
+		}
+		notifyQuiet(`Макет «${selected.name}» удалён`);
 		void vscode.commands.executeCommand('1c-platform-tools.metadata.refresh');
 	}
 
@@ -2686,9 +2876,16 @@ export function registerMetadataFeature(
 					title,
 					cwd,
 					schemaFlag: schema,
+					enqueueMutation: runMdSparrowMutation,
 				});
 			}
 		),
+		registerMetadataCommand('1c-platform-tools.metadata.dcsTemplateAdd', async (item?: vscode.TreeItem) => {
+			await addDcsTemplateFromTree(item);
+		}),
+		registerMetadataCommand('1c-platform-tools.metadata.dcsTemplateRemove', async (item?: vscode.TreeItem) => {
+			await removeDcsTemplateFromTree(item);
+		}),
 		registerMetadataCommand(
 			'1c-platform-tools.metadata.supportRemove',
 			async (item?: MetadataSourceTreeItem) => {
